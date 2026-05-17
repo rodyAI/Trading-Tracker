@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Risk Score Report</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Premium Risk Dashboard</p>
+          <h1>Risk Score Report</h1>
+          <p class="hero-copy">
+            Generate a polished two-page stock risk report with live market data, weighted scoring, narrative context,
+            and clipboard export.
+          </p>
+        </div>
+
+        <div class="control-cluster">
+          <label class="field">
+            <span>Preset ticker</span>
+            <select id="presetTicker">
+              <option value="TSLA" selected>TSLA</option>
+              <option value="AAPL">AAPL</option>
+              <option value="NVDA">NVDA</option>
+              <option value="MSFT">MSFT</option>
+              <option value="AMZN">AMZN</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Manual ticker</span>
+            <input id="manualTicker" type="text" placeholder="Enter symbol" maxlength="12" />
+          </label>
+
+          <div class="trade-input-panel">
+            <p class="mini-label">Optional swing trade setup</p>
+            <div class="trade-input-grid">
+              <label class="field compact-field">
+                <span>Direction</span>
+                <select id="tradeDirection">
+                  <option value="long" selected>Long</option>
+                  <option value="short">Short</option>
+                </select>
+              </label>
+              <label class="field compact-field">
+                <span>Entry</span>
+                <input id="entryPrice" type="text" inputmode="decimal" placeholder="e.g. 425" />
+              </label>
+              <label class="field compact-field">
+                <span>Stop loss</span>
+                <input id="stopLossPrice" type="text" inputmode="decimal" placeholder="e.g. 405" />
+              </label>
+              <label class="field compact-field">
+                <span>Risk / reward</span>
+                <input id="preferredRr" type="text" inputmode="decimal" placeholder="2.0" />
+              </label>
+              <label class="field compact-field">
+                <span>Max hold</span>
+                <input id="maxHoldingPeriod" type="text" placeholder="e.g. 2-8 weeks" />
+              </label>
+              <label class="field compact-field">
+                <span>Risk size</span>
+                <input id="positionRisk" type="text" placeholder="e.g. 1% account" />
+              </label>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button id="refreshButton" class="primary-button" type="button">Refresh report</button>
+            <button id="copyTextButton" class="secondary-button" type="button">Copy Report</button>
+            <button id="copySummaryButton" class="secondary-button" type="button">Copy Summary</button>
+          </div>
+
+          <div class="status-pill-row">
+            <span id="fetchStatus" class="status-pill">Ready</span>
+            <span id="copyStatus" class="status-pill muted">Clipboard idle</span>
+          </div>
+        </div>
+      </header>
+
+      <main id="reportRoot" class="report loading" aria-live="polite">
+        <section class="report-page skeleton-page">
+          <div class="skeleton skeleton-hero"></div>
+          <div class="skeleton-grid">
+            <div class="skeleton skeleton-card tall"></div>
+            <div class="skeleton skeleton-card tall"></div>
+            <div class="skeleton skeleton-card"></div>
+            <div class="skeleton skeleton-card"></div>
+            <div class="skeleton skeleton-card"></div>
+            <div class="skeleton skeleton-card"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="reportTemplate">
+      <section class="report-page page-one">
+        <div class="top-stock-bar card">
+          <div class="identity-block">
+            <p class="section-kicker">Coverage</p>
+            <div class="identity-row">
+              <div>
+                <h2 id="companyName">Tesla, Inc.</h2>
+                <p id="companyMeta" class="muted">TSLA • NASDAQ</p>
+              </div>
+              <div class="price-block mono">
+                <div id="currentPrice" class="price-value">$0.00</div>
+                <div id="dailyMove" class="delta neutral">0.00%</div>
+              </div>
+            </div>
+          </div>
+          <div class="update-block">
+            <div>
+              <p class="mini-label">Last updated</p>
+              <p id="lastUpdated" class="mono meta-value">--</p>
+            </div>
+            <div>
+              <p class="mini-label">Market cap</p>
+              <p id="headerMarketCap" class="mono meta-value">--</p>
+            </div>
+            <div>
+              <p class="mini-label">Sector / industry</p>
+              <p id="headerSector" class="meta-value">--</p>
+            </div>
+          </div>
+        </div>
+        <div id="sourceList" class="source-list full-span"></div>
+
+        <div class="page-grid">
+          <section class="card gauge-card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Composite view</p>
+                <h3>Risk Score</h3>
+              </div>
+              <span id="riskLabel" class="assessment-chip amber">Moderate</span>
+            </div>
+            <div class="gauge-shell">
+              <svg id="riskGauge" viewBox="0 0 240 160" class="gauge-svg" aria-hidden="true"></svg>
+              <div class="gauge-copy">
+                <div id="riskScore" class="gauge-score mono">0</div>
+                <p id="riskNarrative" class="muted">Risk profile is loading.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="card kpi-card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Headline metrics</p>
+                <h3>KPI Strip</h3>
+              </div>
+            </div>
+            <div id="kpiStrip" class="kpi-strip"></div>
+          </section>
+
+          <section class="card chart-card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Market action</p>
+                <h3>12-Month Price History</h3>
+              </div>
+              <p id="chartSummary" class="muted compact"></p>
+            </div>
+            <div class="chart-shell">
+              <svg id="priceChart" viewBox="0 0 880 320" class="price-chart" aria-label="12 month price chart"></svg>
+              <div id="chartTooltip" class="chart-tooltip hidden"></div>
+            </div>
+            <div id="chartLegend" class="chart-legend"></div>
+          </section>
+
+          <section class="card grid-card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Analysis matrix</p>
+                <h3>Six-Card Summary</h3>
+              </div>
+            </div>
+            <div id="analysisGrid" class="analysis-grid"></div>
+          </section>
+
+          <section class="card breakdown-card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Methodology</p>
+                <h3>Weighted Score Breakdown</h3>
+              </div>
+            </div>
+            <div id="breakdownBars" class="breakdown-bars"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="report-page page-two">
+        <div class="page-grid second-page-grid">
+          <section class="card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Financial trend</p>
+                <h3>Quarterly Trend Table</h3>
+              </div>
+            </div>
+            <div class="table-shell">
+              <table id="quarterlyTable">
+                <thead></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Latest release context</p>
+                <h3>Earnings / Delivery Update</h3>
+              </div>
+            </div>
+            <div id="latestUpdate" class="narrative-stack"></div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Business profile</p>
+                <h3>Company Overview</h3>
+              </div>
+            </div>
+            <div id="companyOverview" class="narrative-stack"></div>
+          </section>
+
+          <section class="card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Performance</p>
+                <h3>Stock Performance</h3>
+              </div>
+            </div>
+            <div id="performanceGrid" class="metric-grid"></div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Fundamentals</p>
+                <h3>Financial Health</h3>
+              </div>
+            </div>
+            <div id="financialHealth" class="narrative-stack"></div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Multiples</p>
+                <h3>Valuation</h3>
+              </div>
+            </div>
+            <div id="valuationSection" class="narrative-stack"></div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Opportunity</p>
+                <h3>Growth Potential</h3>
+              </div>
+            </div>
+            <div id="growthSection" class="narrative-stack"></div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Downside map</p>
+                <h3>Risks</h3>
+              </div>
+            </div>
+            <ul id="detailedRiskList" class="bullet-list"></ul>
+          </section>
+
+          <section class="card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Technical setup</p>
+                <h3>Technical Analysis</h3>
+              </div>
+            </div>
+            <div id="technicalGrid" class="metric-grid"></div>
+            <p id="technicalNarrative" class="muted section-copy"></p>
+          </section>
+
+          <section id="swingTradeSection" class="card full-span swing-card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Optional trade plan</p>
+                <h3>Swing Trade Setup</h3>
+              </div>
+              <span id="swingQualityChip" class="assessment-chip amber">Optional</span>
+            </div>
+            <div id="swingEmptyState" class="swing-empty">
+              Enter an entry price and stop-loss above to generate an educational swing-trade take-profit plan.
+            </div>
+            <div id="swingValidation" class="trade-validation hidden"></div>
+            <div id="swingTradeBody" class="swing-body hidden">
+              <div id="swingMetricGrid" class="metric-grid"></div>
+              <div class="trade-chart-shell">
+                <svg id="tradePlanChart" viewBox="0 0 880 280" class="trade-plan-chart" aria-label="Swing trade plan chart"></svg>
+              </div>
+              <div class="dual-column">
+                <div class="narrative-block">
+                  <h4>Trade Plan</h4>
+                  <ul id="tradePlanList" class="bullet-list"></ul>
+                </div>
+                <div class="narrative-block">
+                  <h4>Why This Target</h4>
+                  <p id="tradePlanRationale"></p>
+                  <p class="trade-disclaimer">
+                    Educational swing-trading analysis only. Targets are not guaranteed; execution depends on market conditions,
+                    liquidity, spreads, slippage, earnings, and news.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">What moves next</p>
+                <h3>Catalysts vs Risks</h3>
+              </div>
+            </div>
+            <div class="dual-column">
+              <div>
+                <p class="mini-label positive-label">Catalysts</p>
+                <ul id="catalystList" class="bullet-list"></ul>
+              </div>
+              <div>
+                <p class="mini-label negative-label">Risks</p>
+                <ul id="riskList" class="bullet-list"></ul>
+              </div>
+            </div>
+          </section>
+
+          <section class="card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Scenario work</p>
+                <h3>Bull Case vs Bear Case</h3>
+              </div>
+            </div>
+            <div class="dual-column">
+              <div class="case-panel bull">
+                <p class="mini-label positive-label">Bull case</p>
+                <p id="bullCase" class="muted"></p>
+              </div>
+              <div class="case-panel bear">
+                <p class="mini-label negative-label">Bear case</p>
+                <p id="bearCase" class="muted"></p>
+              </div>
+            </div>
+          </section>
+
+          <section class="card full-span">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Rating</p>
+                <h3>Analyst Rating</h3>
+              </div>
+              <span id="ratingChip" class="assessment-chip amber">Hold</span>
+            </div>
+            <div id="ratingDetails" class="metric-grid"></div>
+          </section>
+
+          <section class="card full-span bottom-line-card">
+            <div class="card-header">
+              <div>
+                <p class="section-kicker">Analyst view</p>
+                <h3>Bottom Line</h3>
+              </div>
+            </div>
+            <div class="verdict-row">
+              <div class="rating-bar-shell">
+                <div id="ratingBar" class="rating-bar"></div>
+                <div class="rating-scale">
+                  <span>Strong Sell</span>
+                  <span>Sell</span>
+                  <span>Hold</span>
+                  <span>Buy</span>
+                  <span>Strong Buy</span>
+                </div>
+              </div>
+              <div>
+                <div id="verdictLabel" class="verdict-label">Watchlist</div>
+                <p id="bottomLine" class="muted"></p>
+                <p class="disclaimer">Educational analysis only. This is not personal financial advice, an offer, or a recommendation to trade.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </template>
+
+    <script src="./script.js" defer></script>
+  </body>
+</html>

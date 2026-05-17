@@ -1,0 +1,19 @@
+{
+  "name": "risk-score-report",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "start": "npm run dev",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "legacy:dev": "node server.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}
