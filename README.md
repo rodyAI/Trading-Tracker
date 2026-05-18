@@ -44,6 +44,36 @@ The backend runs on [http://localhost:8787](http://localhost:8787).
 
 Trades are stored by the backend in `backend/data/trades.json` by default. Set `TRADE_DATA_FILE` to use a different file path.
 
+## Deploy
+
+This project deploys cleanly as one Node web service. The production backend serves the built React app and the `/api` routes from the same domain.
+
+Recommended simple hosting:
+
+- Render Web Service with the included `render.yaml`
+- Railway or Fly.io with equivalent build/start commands
+
+Use these commands:
+
+```bash
+npm install
+npm run build
+npm start
+```
+
+Production environment variables:
+
+```bash
+MARKET_DATA_PROVIDER=yahoo
+TRADE_DATA_FILE=/var/data/trades.json
+YAHOO_LANG=en-US
+YAHOO_REGION=US
+```
+
+On Render, add a persistent disk mounted at `/var/data` so the trade database survives deploys and restarts.
+
+Cloudflare note: Cloudflare Pages is great for static frontends, but this app currently has an Express backend and server-side trade database. To deploy fully on Cloudflare, the backend would need to be refactored to Cloudflare Workers/Pages Functions and D1.
+
 ## Environment
 
 Copy `.env.example` to `.env` and adjust values as needed.

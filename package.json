@@ -9,8 +9,8 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
-    "start": "npm run dev",
-    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "start": "node backend/dist/backend/src/index.js",
+    "build": "npm run build --workspace frontend && npm run build --workspace backend",
     "legacy:dev": "node server.js"
   },
   "devDependencies": {

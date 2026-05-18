@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: trading-tracker
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: MARKET_DATA_PROVIDER
+        value: yahoo
+      - key: TRADE_DATA_FILE
+        value: /var/data/trades.json
+      - key: YAHOO_LANG
+        value: en-US
+      - key: YAHOO_REGION
+        value: US
+    disk:
+      name: trade-data
+      mountPath: /var/data
+      sizeGB: 1

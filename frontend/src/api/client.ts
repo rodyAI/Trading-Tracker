@@ -10,6 +10,7 @@ import type { TrackedTrade } from "../utils/tradeCalculations";
 const resolveApiBase = () => {
   const configuredBase = import.meta.env.VITE_API_BASE_URL;
   if (configuredBase) return configuredBase;
+  if (import.meta.env.PROD) return "/api";
   if (typeof window === "undefined") return "http://localhost:8787/api";
   return `${window.location.protocol}//${window.location.hostname}:8787/api`;
 };

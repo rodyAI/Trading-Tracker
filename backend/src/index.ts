@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import path from "node:path";
 import type { MarketDataProviderId, ScreenerProviderId } from "../../shared/src/types.js";
 import { config } from "./config.js";
 import { createScreenerProvider } from "./providers/index.js";
@@ -182,6 +183,18 @@ app.get("/api/screener/run", async (request, response) => {
       error: error instanceof Error ? error.message : "Failed to run stock screen",
     });
   }
+});
+
+const frontendDistPath = path.resolve(process.cwd(), "frontend/dist");
+app.use(express.static(frontendDistPath));
+
+app.get("*", (request, response, next) => {
+  if (request.path.startsWith("/api")) {
+    next();
+    return;
+  }
+
+  response.sendFile(path.join(frontendDistPath, "index.html"));
 });
 
 app.listen(config.port, () => {
