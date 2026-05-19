@@ -5,14 +5,13 @@
   "type": "module",
   "workspaces": [
     "frontend",
-    "backend",
-    "functions"
+    "backend"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
     "start": "node backend/dist/backend/src/index.js",
     "build": "npm run build --workspace frontend && npm run build --workspace backend",
-    "build:firebase": "npm run build --workspace frontend && npm run build --workspace functions",
+    "build:firebase": "npm run build --workspace frontend",
     "deploy:firebase": "npm run build:firebase && firebase deploy",
     "legacy:dev": "node server.js"
   },

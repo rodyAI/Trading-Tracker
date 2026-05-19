@@ -840,12 +840,11 @@ export default function App() {
           <label>
             <span>Market data source</span>
             <select value={provider} onChange={(event) => setProvider(event.target.value as MarketDataProviderId)}>
-              <option value="yahoo">Yahoo-compatible endpoint</option>
-              <option value="alphavantage">Alpha Vantage API key</option>
+              <option value="yahoo">Yahoo-compatible browser endpoint</option>
             </select>
           </label>
           <p className="meta-text">
-            Alpha Vantage runs server-side and requires `ALPHA_VANTAGE_API_KEY`. Prices are never mocked in production mode.
+            Firebase Spark deploys without Functions. Prices are fetched directly from a real Yahoo-compatible endpoint and are never mocked.
           </p>
           <button type="button" className="primary-button full-width" onClick={() => void refreshPrices()} disabled={isRefreshing}>
             {isRefreshing ? "Refreshing..." : "Refresh Prices"}

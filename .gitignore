@@ -10,3 +10,4 @@ functions/lib
 backend/data/trades.json
 coverage
 .vite
+.firebase

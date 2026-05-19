@@ -1,6 +1,6 @@
 # Swing Trading Tracker
 
-A Firebase-hosted web dashboard for tracking long trades with live market prices, risk/reward math, login, cloud persistence, and sell-price recommendations.
+A Firebase Spark-compatible web dashboard for tracking long trades with live market prices, risk/reward math, login, cloud persistence, and sell-price recommendations.
 
 ## Features
 
@@ -19,18 +19,9 @@ A Firebase-hosted web dashboard for tracking long trades with live market prices
 
 ## Market Data
 
-Firebase Functions supports:
+The Firebase Spark deployment uses a Yahoo-compatible browser endpoint for market prices and candle history. No mock prices are used by the tracker. If the provider blocks or fails a request, the UI shows a clear error on the affected trade.
 
-- Yahoo-compatible endpoints via `MARKET_DATA_PROVIDER=yahoo`
-- Alpha Vantage via `MARKET_DATA_PROVIDER=alphavantage`
-
-Alpha Vantage requires an API key in an environment variable:
-
-```bash
-ALPHA_VANTAGE_API_KEY=your_key_here
-```
-
-No mock prices are used by the tracker. If the selected provider cannot return a price, the UI shows a clear error on the affected trade.
+The legacy local Express backend can still use Yahoo-compatible endpoints or Alpha Vantage for local development, but Firebase production does not deploy a backend function on the free Spark plan.
 
 ## Firebase Architecture
 
@@ -46,10 +37,9 @@ Cloud Firestore
   - stores trades at users/{uid}/trades/{tradeId}
   - protected by firestore.rules
 
-Firebase Functions
-  - exposes /api/market/quotes
-  - exposes /api/market/candles/:symbol
-  - keeps market-data provider keys server-side
+Browser market data
+  - fetches current prices and daily candles from a Yahoo-compatible public endpoint
+  - avoids Firebase Functions so the app can deploy on the Spark plan
 ```
 
 ## Run Locally
@@ -61,7 +51,7 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173).
 
-The local Express backend still runs on [http://localhost:8787](http://localhost:8787) for local market-data development. In Firebase production, `/api` is served by Firebase Functions.
+The local Express backend still runs on [http://localhost:8787](http://localhost:8787) for local market-data development. Firebase production is static Hosting plus Firestore/Auth, with market data fetched directly by the browser.
 
 Trades are stored in Firestore after login.
 
@@ -90,7 +80,6 @@ npm run deploy:firebase
 Firebase deploys:
 
 - Hosting
-- Functions
 - Firestore rules
 - Firestore indexes
 
@@ -113,12 +102,10 @@ VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 
-MARKET_DATA_PROVIDER=yahoo
-YAHOO_LANG=en-US
-YAHOO_REGION=US
+VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
 ```
 
-For Alpha Vantage, set `ALPHA_VANTAGE_API_KEY` as a Firebase Functions environment variable or secret.
+No Firebase Functions are deployed, so this project can stay on Firebase Spark/free. If you later want server-side market-data API keys, provider proxying, or more reliable CORS behavior, add Functions back and upgrade that Firebase project to Blaze.
 
 ## Legacy Express Backend
 
