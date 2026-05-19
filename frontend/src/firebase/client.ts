@@ -21,6 +21,11 @@ const requiredConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+const firebaseConfig = {
+  ...requiredConfig,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+};
+
 const configKeyLabels: Record<keyof typeof requiredConfig, string> = {
   apiKey: "VITE_FIREBASE_API_KEY",
   authDomain: "VITE_FIREBASE_AUTH_DOMAIN",
@@ -36,7 +41,7 @@ export const missingFirebaseConfigKeys = Object.entries(requiredConfig)
 
 export const isFirebaseConfigured = missingFirebaseConfigKeys.length === 0;
 
-const app = isFirebaseConfigured ? initializeApp(requiredConfig) : null;
+const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 const googleProvider = new GoogleAuthProvider();
 
 export const auth: Auth | null = app ? getAuth(app) : null;
