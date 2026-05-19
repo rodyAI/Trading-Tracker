@@ -46,12 +46,27 @@ interface YahooChartResponse {
   };
 }
 
+interface BiQuoteResponse {
+  symbol?: string;
+  bid?: number;
+  ask?: number;
+  mid?: number;
+  high?: number;
+  low?: number;
+  timestamp?: string;
+}
+
 const normalizeSymbol = (symbol: string) => symbol.trim().toUpperCase();
 
 const fromUnixSeconds = (seconds: number | undefined) =>
   typeof seconds === "number" && Number.isFinite(seconds) ? seconds * 1000 : Date.now();
 
-const fetchYahooJson = async <T>(url: string) => {
+const parseNumber = (value: string | number | null | undefined) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const fetchJson = async <T>(url: string) => {
   const response = await fetch(url, {
     headers: {
       Accept: "application/json",
@@ -59,22 +74,24 @@ const fetchYahooJson = async <T>(url: string) => {
   });
 
   if (!response.ok) {
-    throw new Error(`Yahoo-compatible market data request failed with ${response.status}.`);
+    throw new Error(`Market data request failed with ${response.status}.`);
   }
 
   return (await response.json()) as T;
 };
 
-const yahooUnavailableMessage =
-  "Yahoo-compatible market data could not be loaded directly from the browser. This can happen if the provider blocks browser requests. No mock price was used.";
+const getYahooChartUrl = (symbol: string, range: string, interval: string) => {
+  const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
+  url.searchParams.set("range", range);
+  url.searchParams.set("interval", interval);
+  url.searchParams.set("includePrePost", "false");
+  return url.toString();
+};
+
+const getProxiedUrl = (url: string) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`;
 
 const getYahooChartQuote = async (symbol: string): Promise<MarketQuote> => {
-  const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
-  url.searchParams.set("range", "1d");
-  url.searchParams.set("interval", "1m");
-  url.searchParams.set("includePrePost", "false");
-
-  const payload = await fetchYahooJson<YahooChartResponse>(url.toString());
+  const payload = await fetchJson<YahooChartResponse>(getYahooChartUrl(symbol, "1d", "1m"));
   const result = payload.chart?.result?.[0];
   const quote = result?.indicators?.quote?.[0];
   const closes = quote?.close?.filter((value): value is number => Number.isFinite(value)) ?? [];
@@ -104,7 +121,7 @@ const getYahooQuote = async (symbolInput: string): Promise<MarketQuote> => {
   url.searchParams.set("region", "US");
 
   try {
-    const payload = await fetchYahooJson<YahooQuoteResponse>(url.toString());
+    const payload = await fetchJson<YahooQuoteResponse>(url.toString());
     const quote = payload.quoteResponse?.result?.[0];
     const price = quote?.regularMarketPrice;
 
@@ -124,16 +141,43 @@ const getYahooQuote = async (symbolInput: string): Promise<MarketQuote> => {
   }
 };
 
+const getBiQuoteFallback = async (symbolInput: string): Promise<MarketQuote> => {
+  const symbol = normalizeSymbol(symbolInput);
+  const payload = await fetchJson<BiQuoteResponse>(getProxiedUrl(`https://biquote.io/api/${encodeURIComponent(symbol)}`));
+  const price = parseNumber(payload.mid) ?? parseNumber(payload.ask) ?? parseNumber(payload.bid);
+
+  if (price == null) {
+    throw new Error(`No fallback quote returned for ${symbol}.`);
+  }
+
+  return {
+    symbol: normalizeSymbol(payload.symbol ?? symbol),
+    price,
+    currency: "USD",
+    provider: "yahoo",
+    asOf: payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now(),
+  };
+};
+
+const getBrowserQuote = async (symbol: string) => {
+  try {
+    return await getYahooQuote(symbol);
+  } catch (yahooError) {
+    try {
+      return await getBiQuoteFallback(symbol);
+    } catch (fallbackError) {
+      const yahooMessage = yahooError instanceof Error ? yahooError.message : "Yahoo-compatible market data failed.";
+      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback quote source failed.";
+      throw new Error(`${yahooMessage} Browser-safe fallback also failed: ${fallbackMessage}`);
+    }
+  }
+};
+
 const getYahooDailyCandles = async (symbolInput: string): Promise<MarketCandle[]> => {
   const symbol = normalizeSymbol(symbolInput);
   if (!symbol) throw new Error("Symbol is required.");
 
-  const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`);
-  url.searchParams.set("range", "1y");
-  url.searchParams.set("interval", "1d");
-  url.searchParams.set("includePrePost", "false");
-
-  const payload = await fetchYahooJson<YahooChartResponse>(url.toString());
+  const payload = await fetchJson<YahooChartResponse>(getYahooChartUrl(symbol, "1y", "1d"));
   const result = payload.chart?.result?.[0];
   const quote = result?.indicators?.quote?.[0];
   const timestamps = result?.timestamp ?? [];
@@ -169,18 +213,16 @@ export const refreshTradeQuotes = async (
   const quotes: MarketQuote[] = [];
   const errors: Array<{ symbol: string; message: string }> = [];
 
-  await Promise.all(
-    uniqueSymbols.map(async (symbol) => {
-      try {
-        quotes.push(await getYahooQuote(symbol));
-      } catch (error) {
-        errors.push({
-          symbol,
-          message: error instanceof Error ? error.message : yahooUnavailableMessage,
-        });
-      }
-    }),
-  );
+  for (const symbol of uniqueSymbols) {
+    try {
+      quotes.push(await getBrowserQuote(symbol));
+    } catch (error) {
+      errors.push({
+        symbol,
+        message: error instanceof Error ? error.message : "Unable to fetch current price. No mock price was used.",
+      });
+    }
+  }
 
   return {
     provider: "yahoo",
