@@ -26,6 +26,22 @@ interface MarketCandle {
   volume: number;
 }
 
+interface FailedAttempt {
+  source: string;
+  status: "failed";
+  message: string;
+}
+
+class MarketDataError extends Error {
+  attempts: FailedAttempt[];
+
+  constructor(message: string, attempts: FailedAttempt[]) {
+    super(message);
+    this.name = "MarketDataError";
+    this.attempts = attempts;
+  }
+}
+
 interface YahooQuoteResponse {
   quoteResponse?: {
     result?: Array<{
@@ -178,31 +194,27 @@ const getYahooChartQuote = async (symbol: string, env: Env): Promise<MarketQuote
   };
 };
 
-const getYahooQuote = async (symbol: string, env: Env): Promise<MarketQuote> => {
+const getYahooQuoteApi = async (symbol: string, env: Env): Promise<MarketQuote> => {
   const url = new URL("https://query1.finance.yahoo.com/v7/finance/quote");
   url.searchParams.set("symbols", symbol);
   url.searchParams.set("lang", env.YAHOO_LANG ?? "en-US");
   url.searchParams.set("region", env.YAHOO_REGION ?? "US");
 
-  try {
-    const payload = await fetchYahooJson<YahooQuoteResponse>(url.toString(), env);
-    const quote = payload.quoteResponse?.result?.[0];
-    const price = quote?.regularMarketPrice;
+  const payload = await fetchYahooJson<YahooQuoteResponse>(url.toString(), env);
+  const quote = payload.quoteResponse?.result?.[0];
+  const price = quote?.regularMarketPrice;
 
-    if (!quote || !Number.isFinite(price)) {
-      throw new Error(payload.quoteResponse?.error?.description ?? `No current price returned for ${symbol}.`);
-    }
-
-    return {
-      symbol: normalizeSymbol(quote.symbol ?? symbol),
-      price: price as number,
-      currency: quote.currency ?? "USD",
-      provider: "yahoo",
-      asOf: fromUnixSeconds(quote.regularMarketTime),
-    };
-  } catch {
-    return getYahooChartQuote(symbol, env);
+  if (!quote || !Number.isFinite(price)) {
+    throw new Error(payload.quoteResponse?.error?.description ?? `No current price returned for ${symbol}.`);
   }
+
+  return {
+    symbol: normalizeSymbol(quote.symbol ?? symbol),
+    price: price as number,
+    currency: quote.currency ?? "USD",
+    provider: "yahoo",
+    asOf: fromUnixSeconds(quote.regularMarketTime),
+  };
 };
 
 const assertAlphaVantagePayload = (payload: AlphaVantageGlobalQuoteResponse | AlphaVantageDailyResponse) => {
@@ -310,30 +322,39 @@ const getStockAnalysisQuote = async (symbol: string): Promise<MarketQuote> => {
 };
 
 const getQuote = async (symbol: string, provider: MarketDataProviderId, env: Env) => {
-  const errors: string[] = [];
+  const attempts: FailedAttempt[] = [];
 
-  const attempts: Array<() => Promise<MarketQuote>> =
+  const providers: Array<{ source: string; fetchQuote: () => Promise<MarketQuote> }> =
     provider === "alphavantage"
       ? [
-          () => getAlphaVantageQuote(symbol, env),
-          () => getYahooQuote(symbol, env),
-          () => getStockAnalysisQuote(symbol),
+          { source: "Alpha Vantage global quote", fetchQuote: () => getAlphaVantageQuote(symbol, env) },
+          { source: "Yahoo quote API", fetchQuote: () => getYahooQuoteApi(symbol, env) },
+          { source: "Yahoo chart API", fetchQuote: () => getYahooChartQuote(symbol, env) },
+          { source: "StockAnalysis page chart", fetchQuote: () => getStockAnalysisQuote(symbol) },
         ]
       : [
-          () => getYahooQuote(symbol, env),
-          () => getAlphaVantageQuote(symbol, env),
-          () => getStockAnalysisQuote(symbol),
+          { source: "Yahoo quote API", fetchQuote: () => getYahooQuoteApi(symbol, env) },
+          { source: "Yahoo chart API", fetchQuote: () => getYahooChartQuote(symbol, env) },
+          { source: "Alpha Vantage global quote", fetchQuote: () => getAlphaVantageQuote(symbol, env) },
+          { source: "StockAnalysis page chart", fetchQuote: () => getStockAnalysisQuote(symbol) },
         ];
 
-  for (const attempt of attempts) {
+  for (const attempt of providers) {
     try {
-      return await attempt();
+      return await attempt.fetchQuote();
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : "Unknown quote error.");
+      attempts.push({
+        source: attempt.source,
+        status: "failed",
+        message: error instanceof Error ? error.message : "Unknown quote error.",
+      });
     }
   }
 
-  throw new Error(errors.join(" "));
+  throw new MarketDataError(
+    `Could not fetch a real price for ${symbol}. Tried ${attempts.map((attempt) => attempt.source).join(", ")}.`,
+    attempts,
+  );
 };
 
 const getDailyCandles = async (symbol: string, provider: MarketDataProviderId, env: Env) => {
@@ -403,14 +424,18 @@ const handleQuotes = async (request: Request, env: Env, corsHeaders: HeadersInit
 
   const provider = resolveProvider(request, env);
   const quotes: MarketQuote[] = [];
-  const errors: Array<{ symbol: string; message: string }> = [];
+  const errors: Array<{ symbol: string; message: string; attempts?: FailedAttempt[] }> = [];
 
   await Promise.all(
     uniqueSymbols.map(async (symbol) => {
       try {
         quotes.push(await getQuote(symbol, provider, env));
       } catch (error) {
-        errors.push({ symbol, message: error instanceof Error ? error.message : "Unable to fetch current price." });
+        errors.push({
+          symbol,
+          message: error instanceof Error ? error.message : "Unable to fetch current price.",
+          attempts: error instanceof MarketDataError ? error.attempts : undefined,
+        });
       }
     }),
   );

@@ -90,6 +90,16 @@ const getErrorMessage = async (response: Response, fallback: string) => {
   }
 };
 
+const formatQuoteError = (error: QuoteBatchResponse["errors"][number]) => {
+  if (!error.attempts?.length) return error.message;
+
+  const attemptSummary = error.attempts
+    .map((attempt, index) => `${index + 1}. ${attempt.source}: ${attempt.message}`)
+    .join(" ");
+
+  return `${error.message} Steps tried: ${attemptSummary}`;
+};
+
 const fetchWorkerQuotes = async (symbols: string[], provider?: MarketDataProviderId) => {
   const url = new URL(`${workerApiBase}/api/market/quotes`);
   if (provider) url.searchParams.set("provider", provider);
@@ -104,7 +114,14 @@ const fetchWorkerQuotes = async (symbols: string[], provider?: MarketDataProvide
     throw new Error(await getErrorMessage(response, "Failed to fetch current prices from market-data Worker."));
   }
 
-  return (await response.json()) as QuoteBatchResponse;
+  const payload = (await response.json()) as QuoteBatchResponse;
+  return {
+    ...payload,
+    errors: payload.errors.map((error) => ({
+      ...error,
+      message: formatQuoteError(error),
+    })),
+  };
 };
 
 const fetchWorkerCandles = async (symbol: string, provider?: MarketDataProviderId) => {

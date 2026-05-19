@@ -93,6 +93,11 @@ export interface QuoteBatchResponse {
   errors: Array<{
     symbol: string;
     message: string;
+    attempts?: Array<{
+      source: string;
+      status: "failed";
+      message: string;
+    }>;
   }>;
 }
 
