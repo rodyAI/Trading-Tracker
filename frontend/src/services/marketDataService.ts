@@ -58,6 +58,7 @@ interface BiQuoteResponse {
 
 const normalizeSymbol = (symbol: string) => symbol.trim().toUpperCase();
 const workerApiBase = import.meta.env.VITE_MARKET_API_BASE_URL?.replace(/\/$/, "") ?? "";
+const WORKER_QUOTE_BATCH_SIZE = 8;
 
 const fromUnixSeconds = (seconds: number | undefined) =>
   typeof seconds === "number" && Number.isFinite(seconds) ? seconds * 1000 : Date.now();
@@ -98,6 +99,14 @@ const formatQuoteError = (error: QuoteBatchResponse["errors"][number]) => {
     .join(" ");
 
   return `${error.message} Steps tried: ${attemptSummary}`;
+};
+
+const chunk = <T,>(items: T[], size: number) => {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 };
 
 const fetchWorkerQuotes = async (symbols: string[], provider?: MarketDataProviderId) => {
@@ -304,7 +313,18 @@ export const refreshTradeQuotes = async (
   symbols: string[],
   provider?: MarketDataProviderId,
 ): Promise<QuoteBatchResponse> => {
-  if (workerApiBase) return fetchWorkerQuotes(symbols, provider);
+  if (workerApiBase) {
+    const uniqueSymbols = [...new Set(symbols.map(normalizeSymbol).filter(Boolean))];
+    const batches = chunk(uniqueSymbols, WORKER_QUOTE_BATCH_SIZE);
+    const responses = await Promise.all(batches.map((batch) => fetchWorkerQuotes(batch, provider)));
+
+    return {
+      provider: responses.find((response) => response.quotes.length > 0)?.provider ?? provider ?? "yahoo",
+      generatedAt: Date.now(),
+      quotes: responses.flatMap((response) => response.quotes),
+      errors: responses.flatMap((response) => response.errors),
+    };
+  }
 
   const uniqueSymbols = [...new Set(symbols.map(normalizeSymbol).filter(Boolean))];
   const quotes: MarketQuote[] = [];
