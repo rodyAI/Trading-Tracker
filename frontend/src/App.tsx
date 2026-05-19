@@ -1,12 +1,16 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MarketDataProviderId } from "@shared/types";
 import {
-  deleteStoredTrade,
-  fetchStoredTrades,
-  importStoredTrades,
-  replaceStoredTrades,
-  saveStoredTrade,
-} from "./api/client";
+  signInWithEmail,
+  signInWithGoogle,
+  signOutCurrentUser,
+  signUpWithEmail,
+  isFirebaseConfigured,
+  missingFirebaseConfigKeys,
+  subscribeToAuth,
+  type User,
+} from "./firebase/client";
+import { deleteUserTrade, importUserTrades, replaceUserTrades, saveUserTrade, subscribeToUserTrades } from "./services/firebaseTradeStore";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
   TRADE_CATEGORIES,
@@ -111,6 +115,12 @@ const summarizeTrades = (items: TrackedTrade[]) => {
 };
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
   const [trades, setTrades] = useState<TrackedTrade[]>([]);
   const [form, setForm] = useState<TradeFormValues>(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof TradeFormValues, string>>>({});
@@ -131,23 +141,37 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const loadTrades = async () => {
-      setIsLoadingTrades(true);
-      setGlobalError("");
-      try {
-        const response = await fetchStoredTrades();
-        setTrades(response.trades.map((trade) => ({ ...trade, category: trade.category ?? "Swing" })));
-        setStatusMessage(`Loaded ${response.trades.length} trade${response.trades.length === 1 ? "" : "s"} from the backend.`);
-      } catch (error) {
-        setGlobalError(error instanceof Error ? error.message : "Failed to load trades from the backend.");
-        setStatusMessage("Trade load failed.");
-      } finally {
-        setIsLoadingTrades(false);
-      }
-    };
-
-    void loadTrades();
+    return subscribeToAuth((nextUser) => {
+      setUser(nextUser);
+      setIsAuthLoading(false);
+    });
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setTrades([]);
+      setIsLoadingTrades(false);
+      setStatusMessage("Sign in to load your trades.");
+      return undefined;
+    }
+
+    setIsLoadingTrades(true);
+    setGlobalError("");
+
+    return subscribeToUserTrades(
+      user,
+      (nextTrades) => {
+        setTrades(nextTrades);
+        setIsLoadingTrades(false);
+        setStatusMessage(`Loaded ${nextTrades.length} trade${nextTrades.length === 1 ? "" : "s"} from Firestore.`);
+      },
+      (error) => {
+        setGlobalError(error.message);
+        setIsLoadingTrades(false);
+        setStatusMessage("Trade load failed.");
+      },
+    );
+  }, [user]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -185,6 +209,11 @@ export default function App() {
   );
 
   const refreshPrices = useCallback(async () => {
+    if (!user) {
+      setStatusMessage("Sign in to refresh prices.");
+      return;
+    }
+
     const symbols = [...new Set(trades.map((trade) => trade.symbol).filter(Boolean))];
     if (symbols.length === 0) {
       setStatusMessage("No trades to refresh yet.");
@@ -212,7 +241,7 @@ export default function App() {
         };
       });
       setTrades(nextTrades);
-      await replaceStoredTrades(nextTrades);
+      await replaceUserTrades(user, nextTrades);
 
       const failures = response.errors.length;
       setStatusMessage(
@@ -225,7 +254,7 @@ export default function App() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [provider, trades]);
+  }, [provider, trades, user]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -241,6 +270,11 @@ export default function App() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!user) {
+      setStatusMessage("Sign in before saving trades.");
+      return;
+    }
+
     const validation = validateTradeForm(form);
     setFormErrors(validation.errors);
     if (!validation.values) return;
@@ -260,18 +294,18 @@ export default function App() {
     setStatusMessage("Saving trade and calculating the recommended sell price...");
     const tradeWithRecommendation = await enrichTradeRecommendation(baseTrade);
     try {
-      const response = await saveStoredTrade(tradeWithRecommendation);
+      const savedTrade = await saveUserTrade(user, tradeWithRecommendation);
       setTrades((currentTrades) => {
-        const exists = currentTrades.some((trade) => trade.id === response.trade.id);
-        if (!exists) return [response.trade, ...currentTrades];
-        return currentTrades.map((trade) => (trade.id === response.trade.id ? response.trade : trade));
+        const exists = currentTrades.some((trade) => trade.id === savedTrade.id);
+        if (!exists) return [savedTrade, ...currentTrades];
+        return currentTrades.map((trade) => (trade.id === savedTrade.id ? savedTrade : trade));
       });
 
-      setActiveCategory(response.trade.category ?? "Swing");
+      setActiveCategory(savedTrade.category ?? "Swing");
       setForm(emptyForm);
-      setStatusMessage(`${response.trade.symbol} saved to the backend. Refresh prices to update live P/L.`);
+      setStatusMessage(`${savedTrade.symbol} saved to Firestore. Refresh prices to update live P/L.`);
     } catch (error) {
-      setGlobalError(error instanceof Error ? error.message : "Failed to save trade to the backend.");
+      setGlobalError(error instanceof Error ? error.message : "Failed to save trade to Firestore.");
       setStatusMessage("Trade save failed.");
     }
   };
@@ -295,11 +329,16 @@ export default function App() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!user) {
+      setStatusMessage("Sign in before deleting trades.");
+      return;
+    }
+
     try {
-      await deleteStoredTrade(id);
+      await deleteUserTrade(user, id);
       setTrades((currentTrades) => currentTrades.filter((trade) => trade.id !== id));
       if (form.id === id) setForm(emptyForm);
-      setStatusMessage("Trade deleted from the backend.");
+      setStatusMessage("Trade deleted from Firestore.");
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Failed to delete trade.");
     }
@@ -425,6 +464,11 @@ export default function App() {
   };
 
   const importCsv = async (file: File, targetCategory: TradeCategory) => {
+    if (!user) {
+      setStatusMessage("Sign in before importing trades.");
+      return;
+    }
+
     const text = await file.text();
     const [, ...lines] = text.split(/\r?\n/).filter(Boolean);
     const importedTrades: TrackedTrade[] = [];
@@ -459,12 +503,12 @@ export default function App() {
     }
 
     if (importedTrades.length > 0) {
-      const response = await importStoredTrades(importedTrades);
-      setTrades((currentTrades) => [...response.trades, ...currentTrades]);
+      const savedTrades = await importUserTrades(user, importedTrades);
+      setTrades((currentTrades) => [...savedTrades, ...currentTrades]);
       setActiveCategory(targetCategory);
       setIsImportChooserOpen(false);
       setStatusMessage(
-        `Imported ${response.trades.length} trade${response.trades.length === 1 ? "" : "s"} into ${targetCategory}.`,
+        `Imported ${savedTrades.length} trade${savedTrades.length === 1 ? "" : "s"} into ${targetCategory}.`,
       );
     } else {
       setGlobalError("No valid trades were found in the CSV.");
@@ -587,6 +631,118 @@ export default function App() {
     );
   };
 
+  const handleAuthSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthError("");
+
+    try {
+      if (authMode === "signup") {
+        await signUpWithEmail(authEmail, authPassword);
+      } else {
+        await signInWithEmail(authEmail, authPassword);
+      }
+      setAuthPassword("");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Authentication failed.");
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError("");
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Google sign-in failed.");
+    }
+  };
+
+  if (!isFirebaseConfigured) {
+    return (
+      <main className="page-shell auth-page">
+        <section className="auth-shell panel">
+          <div>
+            <p className="eyebrow">Firebase Setup Required</p>
+            <h1>Add your Firebase Web App config to start the tracker.</h1>
+            <p className="lede">
+              Create a Firebase project, enable Auth and Firestore, then copy the web app values into `.env`.
+            </p>
+          </div>
+          <div className="setup-list">
+            <span>Missing environment values</span>
+            {missingFirebaseConfigKeys.map((key) => (
+              <code key={key}>{key}</code>
+            ))}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (isAuthLoading) {
+    return (
+      <main className="page-shell">
+        <section className="auth-shell panel">
+          <p className="eyebrow">Swing Trading Tracker</p>
+          <h1>Loading your secure tracker...</h1>
+        </section>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="page-shell auth-page">
+        <section className="auth-shell panel">
+          <div>
+            <p className="eyebrow">Swing Trading Tracker</p>
+            <h1>Sign in to access your trades from any device.</h1>
+            <p className="lede">
+              Your trades are saved in Firestore under your Firebase account. This tool is for tracking and educational
+              purposes only and is not financial advice.
+            </p>
+          </div>
+
+          <form className="auth-form" onSubmit={handleAuthSubmit}>
+            <label>
+              <span>Email</span>
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="you@example.com"
+                required
+              />
+            </label>
+            <label>
+              <span>Password</span>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="At least 6 characters"
+                required
+              />
+            </label>
+            <button type="submit" className="primary-button">
+              {authMode === "signup" ? "Create Account" : "Sign In"}
+            </button>
+            <button type="button" className="secondary-button" onClick={handleGoogleSignIn}>
+              Continue With Google
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setAuthMode((current) => (current === "signin" ? "signup" : "signin"))}
+            >
+              {authMode === "signin" ? "Create a new account" : "Use an existing account"}
+            </button>
+            {authError && <p className="error-text">{authError}</p>}
+          </form>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="page-shell">
       <section className="top-band">
@@ -596,6 +752,12 @@ export default function App() {
           <p className="lede">
             This tool is for tracking and educational purposes only and is not financial advice.
           </p>
+          <div className="account-bar">
+            <span>{user.email ?? "Signed in"}</span>
+            <button type="button" className="secondary-button" onClick={() => void signOutCurrentUser()}>
+              Sign Out
+            </button>
+          </div>
         </div>
         <div className="summary-grid">
           <article className={`summary-card ${portfolio.unrealized >= 0 ? "positive" : "negative"}`}>

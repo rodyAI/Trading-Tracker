@@ -143,6 +143,73 @@ label span,
   margin-bottom: 20px;
 }
 
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  align-items: center;
+}
+
+.auth-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 28px;
+  align-items: center;
+}
+
+.auth-shell h1 {
+  margin: 0;
+  max-width: 760px;
+  font-size: clamp(2rem, 4vw, 4rem);
+  line-height: 1;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.setup-list {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.setup-list span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.setup-list code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.text-button {
+  border: 0;
+  color: var(--accent-strong);
+  background: transparent;
+  padding: 8px 0;
+  font-weight: 800;
+}
+
+.account-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.account-bar span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .panel {
   padding: 20px;
 }
@@ -534,7 +601,8 @@ td small {
 
 @media (max-width: 1080px) {
   .top-band,
-  .workspace-grid {
+  .workspace-grid,
+  .auth-shell {
     grid-template-columns: 1fr;
   }
 

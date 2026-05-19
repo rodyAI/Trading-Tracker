@@ -1,6 +1,6 @@
 # Swing Trading Tracker
 
-A local web dashboard for tracking long trades with live market prices, risk/reward math, server-side persistence, and sell-price recommendations.
+A Firebase-hosted web dashboard for tracking long trades with live market prices, risk/reward math, login, cloud persistence, and sell-price recommendations.
 
 ## Features
 
@@ -12,13 +12,14 @@ A local web dashboard for tracking long trades with live market prices, risk/rew
 - Display current P/L, risk, reward, risk/reward ratio, status, and portfolio unrealized P/L
 - Show total P/L in dollars and percent for each dashboard sheet
 - Recommend a sell price. With a stop loss, the default is 2:1 risk/reward improved with resistance and ATR when candle data is available. Without a stop loss, the recommendation uses resistance/ATR and shows risk metrics as unavailable.
-- Save trades server-side in a lightweight backend JSON database
+- Sign in with Firebase Auth using email/password or Google
+- Save trades per user in Cloud Firestore
 - Export and import CSV
 - Responsive dark-mode UI with a desktop table and mobile cards
 
 ## Market Data
 
-The backend supports:
+Firebase Functions supports:
 
 - Yahoo-compatible endpoints via `MARKET_DATA_PROVIDER=yahoo`
 - Alpha Vantage via `MARKET_DATA_PROVIDER=alphavantage`
@@ -31,6 +32,26 @@ ALPHA_VANTAGE_API_KEY=your_key_here
 
 No mock prices are used by the tracker. If the selected provider cannot return a price, the UI shows a clear error on the affected trade.
 
+## Firebase Architecture
+
+```txt
+Firebase Hosting
+  - serves the React app from frontend/dist
+
+Firebase Auth
+  - email/password login
+  - Google login
+
+Cloud Firestore
+  - stores trades at users/{uid}/trades/{tradeId}
+  - protected by firestore.rules
+
+Firebase Functions
+  - exposes /api/market/quotes
+  - exposes /api/market/candles/:symbol
+  - keeps market-data provider keys server-side
+```
+
 ## Run Locally
 
 ```bash
@@ -40,52 +61,71 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173).
 
-The backend runs on [http://localhost:8787](http://localhost:8787).
+The local Express backend still runs on [http://localhost:8787](http://localhost:8787) for local market-data development. In Firebase production, `/api` is served by Firebase Functions.
 
-Trades are stored by the backend in `backend/data/trades.json` by default. Set `TRADE_DATA_FILE` to use a different file path.
+Trades are stored in Firestore after login.
 
-## Deploy
+## Firebase Setup
 
-This project deploys cleanly as one Node web service. The production backend serves the built React app and the `/api` routes from the same domain.
-
-Recommended simple hosting:
-
-- Render Web Service with the included `render.yaml`
-- Railway or Fly.io with equivalent build/start commands
-
-Use these commands:
+1. Create a Firebase project.
+2. Enable Authentication providers:
+   - Email/password
+   - Google
+3. Create a Cloud Firestore database.
+4. Create a Firebase Web App and copy its config into `.env`.
+5. Copy `.firebaserc.example` to `.firebaserc` and replace `your-firebase-project-id`.
+6. Install dependencies:
 
 ```bash
 npm install
-npm run build
-npm start
 ```
 
-Production environment variables:
+7. Log in and deploy:
 
 ```bash
+npx firebase login
+npm run deploy:firebase
+```
+
+Firebase deploys:
+
+- Hosting
+- Functions
+- Firestore rules
+- Firestore indexes
+
+## Firebase Build
+
+```bash
+npm install
+npm run build:firebase
+```
+
+## Firebase Environment
+
+Copy `.env.example` to `.env` and fill in Firebase Web App values:
+
+```bash
+VITE_FIREBASE_API_KEY=your_firebase_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+VITE_FIREBASE_APP_ID=your_app_id
+
 MARKET_DATA_PROVIDER=yahoo
-TRADE_DATA_FILE=/var/data/trades.json
 YAHOO_LANG=en-US
 YAHOO_REGION=US
 ```
 
-On Render, add a persistent disk mounted at `/var/data` so the trade database survives deploys and restarts.
+For Alpha Vantage, set `ALPHA_VANTAGE_API_KEY` as a Firebase Functions environment variable or secret.
 
-Cloudflare note: Cloudflare Pages is great for static frontends, but this app currently has an Express backend and server-side trade database. To deploy fully on Cloudflare, the backend would need to be refactored to Cloudflare Workers/Pages Functions and D1.
+## Legacy Express Backend
 
-## Environment
-
-Copy `.env.example` to `.env` and adjust values as needed.
+The old Express backend is still in the repo for local compatibility and can still run with:
 
 ```bash
-PORT=8787
-FRONTEND_ORIGIN=http://localhost:5173
-MARKET_DATA_PROVIDER=yahoo
-ALPHA_VANTAGE_API_KEY=your_key_here
-TRADE_DATA_FILE=backend/data/trades.json
-YAHOO_LANG=en-US
-YAHOO_REGION=US
+npm run dev
 ```
 
 ## Disclaimer

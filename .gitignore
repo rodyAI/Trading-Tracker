@@ -6,6 +6,7 @@ dist
 __pycache__
 frontend/dist
 backend/dist
+functions/lib
 backend/data/trades.json
 coverage
 .vite
