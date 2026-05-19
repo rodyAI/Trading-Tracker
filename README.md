@@ -19,7 +19,7 @@ A Firebase Spark-compatible web dashboard for tracking long trades with live mar
 
 ## Market Data
 
-The Firebase Spark deployment uses a Yahoo-compatible browser endpoint for market prices and candle history. If quote refresh is blocked by the browser, the app falls back to a no-key browser-safe quote source. No mock prices are used by the tracker. If all providers fail a request, the UI shows a clear error on the affected trade.
+The Firebase Spark deployment uses a Yahoo-compatible browser endpoint for market prices and candle history. If quote refresh is blocked by the browser, the app falls back to no-key browser-safe quote sources, including a public page fallback for smaller tickers. No mock prices are used by the tracker. If all providers fail a request, the UI shows a clear error on the affected trade.
 
 The legacy local Express backend can still use Yahoo-compatible endpoints or Alpha Vantage for local development, but Firebase production does not deploy a backend function on the free Spark plan.
 
@@ -39,7 +39,7 @@ Cloud Firestore
 
 Browser market data
   - fetches current prices and daily candles from a Yahoo-compatible public endpoint
-  - uses a no-key browser-safe quote fallback when the primary quote endpoint fails
+  - uses no-key browser-safe quote fallbacks when the primary quote endpoint fails
   - avoids Firebase Functions so the app can deploy on the Spark plan
 ```
 

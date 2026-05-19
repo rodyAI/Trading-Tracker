@@ -159,6 +159,37 @@ const getBiQuoteFallback = async (symbolInput: string): Promise<MarketQuote> => 
   };
 };
 
+const getStockAnalysisFallback = async (symbolInput: string): Promise<MarketQuote> => {
+  const symbol = normalizeSymbol(symbolInput);
+  const response = await fetch(getProxiedUrl(`https://stockanalysis.com/stocks/${symbol.toLowerCase()}/`), {
+    headers: {
+      Accept: "text/html",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`StockAnalysis fallback request failed with ${response.status}.`);
+  }
+
+  const html = await response.text();
+  const chartPoints = [...html.matchAll(/\{c:([0-9.]+)(?:,o:([0-9.]+))?,t:(\d+)\}/g)];
+  const latestPoint = chartPoints.at(-1);
+  const price = parseNumber(latestPoint?.[1]);
+  const timestamp = parseNumber(latestPoint?.[3]);
+
+  if (price == null) {
+    throw new Error(`No StockAnalysis fallback quote returned for ${symbol}.`);
+  }
+
+  return {
+    symbol,
+    price,
+    currency: "USD",
+    provider: "yahoo",
+    asOf: timestamp != null ? timestamp * 1000 : Date.now(),
+  };
+};
+
 const getBrowserQuote = async (symbol: string) => {
   try {
     return await getYahooQuote(symbol);
@@ -166,9 +197,17 @@ const getBrowserQuote = async (symbol: string) => {
     try {
       return await getBiQuoteFallback(symbol);
     } catch (fallbackError) {
-      const yahooMessage = yahooError instanceof Error ? yahooError.message : "Yahoo-compatible market data failed.";
-      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback quote source failed.";
-      throw new Error(`${yahooMessage} Browser-safe fallback also failed: ${fallbackMessage}`);
+      try {
+        return await getStockAnalysisFallback(symbol);
+      } catch (stockAnalysisError) {
+        const yahooMessage = yahooError instanceof Error ? yahooError.message : "Yahoo-compatible market data failed.";
+        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Fallback quote source failed.";
+        const stockAnalysisMessage =
+          stockAnalysisError instanceof Error ? stockAnalysisError.message : "StockAnalysis fallback failed.";
+        throw new Error(
+          `${yahooMessage} Browser-safe fallback also failed: ${fallbackMessage} StockAnalysis fallback also failed: ${stockAnalysisMessage}`,
+        );
+      }
     }
   }
 };
