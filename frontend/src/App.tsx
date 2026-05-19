@@ -844,7 +844,7 @@ export default function App() {
             </select>
           </label>
           <p className="meta-text">
-            Firebase Spark deploys without Functions. Prices are fetched directly from a real Yahoo-compatible endpoint and are never mocked.
+            Prices are fetched through the market-data Worker when configured, with browser fallbacks for local static builds. Prices are never mocked.
           </p>
           <button type="button" className="primary-button full-width" onClick={() => void refreshPrices()} disabled={isRefreshing}>
             {isRefreshing ? "Refreshing..." : "Refresh Prices"}

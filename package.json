@@ -5,13 +5,16 @@
   "type": "module",
   "workspaces": [
     "frontend",
-    "backend"
+    "backend",
+    "market-worker"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
     "start": "node backend/dist/backend/src/index.js",
     "build": "npm run build --workspace frontend && npm run build --workspace backend",
     "build:firebase": "npm run build --workspace frontend",
+    "build:worker": "npm run build --workspace market-worker",
+    "deploy:worker": "npm run deploy --workspace market-worker",
     "deploy:firebase": "npm run build:firebase && firebase deploy",
     "legacy:dev": "node server.js"
   },

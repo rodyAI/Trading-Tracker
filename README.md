@@ -41,6 +41,11 @@ Browser market data
   - fetches current prices and daily candles from a Yahoo-compatible public endpoint
   - uses no-key browser-safe quote fallbacks when the primary quote endpoint fails
   - avoids Firebase Functions so the app can deploy on the Spark plan
+
+Cloudflare Worker market data
+  - optional production proxy for more reliable server-side quote and candle fetching
+  - keeps provider API keys in Cloudflare Worker secrets
+  - exposes the same /api/market/quotes and /api/market/candles/:symbol routes used by the frontend
 ```
 
 ## Run Locally
@@ -107,6 +112,32 @@ VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
 ```
 
 No Firebase Functions are deployed, so this project can stay on Firebase Spark/free. If you later want server-side market-data API keys, provider proxying, or more reliable CORS behavior, add Functions back and upgrade that Firebase project to Blaze.
+
+## Cloudflare Worker Market Data
+
+The Worker lives in `market-worker` and can be deployed separately from Firebase:
+
+```bash
+npm install
+npm run build:worker
+npx wrangler login
+cd market-worker
+npx wrangler secret put ALPHA_VANTAGE_API_KEY
+npx wrangler deploy
+```
+
+If this is the first Worker on the Cloudflare account, Cloudflare requires a one-time `workers.dev` subdomain registration in the dashboard. After deploy prints the Worker URL, set it in `.env`:
+
+```bash
+VITE_MARKET_API_BASE_URL=https://your-worker.your-subdomain.workers.dev
+```
+
+Then rebuild and redeploy Firebase Hosting:
+
+```bash
+npm run build:firebase
+npx firebase deploy --only hosting
+```
 
 ## Legacy Express Backend
 

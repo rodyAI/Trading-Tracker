@@ -1,0 +1,10 @@
+name = "trading-tracker-market-data"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://trade-tracker-bdf23.web.app,https://trade-tracker-bdf23.firebaseapp.com,http://localhost:5173"
+MARKET_DATA_PROVIDER = "yahoo"
+YAHOO_LANG = "en-US"
+YAHOO_REGION = "US"
+ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query"

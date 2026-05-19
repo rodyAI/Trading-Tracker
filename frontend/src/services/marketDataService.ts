@@ -57,6 +57,7 @@ interface BiQuoteResponse {
 }
 
 const normalizeSymbol = (symbol: string) => symbol.trim().toUpperCase();
+const workerApiBase = import.meta.env.VITE_MARKET_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
 const fromUnixSeconds = (seconds: number | undefined) =>
   typeof seconds === "number" && Number.isFinite(seconds) ? seconds * 1000 : Date.now();
@@ -78,6 +79,44 @@ const fetchJson = async <T>(url: string) => {
   }
 
   return (await response.json()) as T;
+};
+
+const getErrorMessage = async (response: Response, fallback: string) => {
+  try {
+    const payload = (await response.json()) as { error?: string };
+    return payload.error ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const fetchWorkerQuotes = async (symbols: string[], provider?: MarketDataProviderId) => {
+  const url = new URL(`${workerApiBase}/api/market/quotes`);
+  if (provider) url.searchParams.set("provider", provider);
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbols }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response, "Failed to fetch current prices from market-data Worker."));
+  }
+
+  return (await response.json()) as QuoteBatchResponse;
+};
+
+const fetchWorkerCandles = async (symbol: string, provider?: MarketDataProviderId) => {
+  const url = new URL(`${workerApiBase}/api/market/candles/${encodeURIComponent(symbol)}`);
+  if (provider) url.searchParams.set("provider", provider);
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(await getErrorMessage(response, `Failed to fetch daily candles for ${symbol} from market-data Worker.`));
+  }
+
+  return (await response.json()) as CandleResponse;
 };
 
 const getYahooChartUrl = (symbol: string, range: string, interval: string) => {
@@ -246,8 +285,10 @@ const getYahooDailyCandles = async (symbolInput: string): Promise<MarketCandle[]
 
 export const refreshTradeQuotes = async (
   symbols: string[],
-  _provider?: MarketDataProviderId,
+  provider?: MarketDataProviderId,
 ): Promise<QuoteBatchResponse> => {
+  if (workerApiBase) return fetchWorkerQuotes(symbols, provider);
+
   const uniqueSymbols = [...new Set(symbols.map(normalizeSymbol).filter(Boolean))];
   const quotes: MarketQuote[] = [];
   const errors: Array<{ symbol: string; message: string }> = [];
@@ -273,10 +314,14 @@ export const refreshTradeQuotes = async (
 
 export const loadTradeCandles = async (
   symbol: string,
-  _provider?: MarketDataProviderId,
-): Promise<CandleResponse> => ({
-  symbol: normalizeSymbol(symbol),
-  provider: "yahoo",
-  generatedAt: Date.now(),
-  candles: await getYahooDailyCandles(symbol),
-});
+  provider?: MarketDataProviderId,
+): Promise<CandleResponse> => {
+  if (workerApiBase) return fetchWorkerCandles(symbol, provider);
+
+  return {
+    symbol: normalizeSymbol(symbol),
+    provider: "yahoo",
+    generatedAt: Date.now(),
+    candles: await getYahooDailyCandles(symbol),
+  };
+};
