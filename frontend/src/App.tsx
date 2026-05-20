@@ -38,6 +38,7 @@ type SortKey = "symbol" | "profitLoss" | "riskReward" | "status";
 type SortDirection = "asc" | "desc";
 
 const PROVIDER_STORAGE_KEY = "swing-trading-tracker-provider";
+const PORTFOLIO_SETTINGS_STORAGE_PREFIX = "swing-trading-tracker-portfolio-settings";
 const REFRESH_STEP_TIMEOUT_MS = 30_000;
 const formatTimeoutSeconds = (timeoutMs = REFRESH_STEP_TIMEOUT_MS) => Math.round(timeoutMs / 1000);
 
@@ -142,6 +143,34 @@ const summarizeTrades = (items: TrackedTrade[]) => {
 const shouldIncludeInPortfolioTotals = (trade: TrackedTrade, excludedCategories: Set<TradeCategory>) =>
   !trade.excludeFromPortfolioTotals && !excludedCategories.has(trade.category ?? "Swing");
 
+const normalizeExcludedCategories = (categories: unknown): TradeCategory[] => {
+  if (!Array.isArray(categories)) return [];
+  return categories.filter((category): category is TradeCategory => TRADE_CATEGORIES.includes(category as TradeCategory));
+};
+
+const portfolioSettingsStorageKey = (user: User) => `${PORTFOLIO_SETTINGS_STORAGE_PREFIX}-${user.uid}`;
+
+const loadCachedExcludedCategories = (user: User) => {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const cached = window.localStorage.getItem(portfolioSettingsStorageKey(user));
+    if (!cached) return [];
+    const parsed = JSON.parse(cached) as { excludedCategories?: unknown };
+    return normalizeExcludedCategories(parsed.excludedCategories);
+  } catch {
+    return [];
+  }
+};
+
+const cacheExcludedCategories = (user: User, excludedCategories: TradeCategory[]) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    portfolioSettingsStorageKey(user),
+    JSON.stringify({ excludedCategories }),
+  );
+};
+
 const withTimeout = async <T,>(promise: Promise<T>, message: string, timeoutMs = REFRESH_STEP_TIMEOUT_MS) => {
   let timeoutId: number | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -227,6 +256,7 @@ export default function App() {
   const initialRefreshUserRef = useRef<string | null>(null);
   const isRefreshingRef = useRef(false);
   const isRecalculatingRecommendationsRef = useRef(false);
+  const portfolioSettingsSaveInFlightRef = useRef(false);
 
   useEffect(() => {
     return subscribeToAuth((nextUser) => {
@@ -276,10 +306,17 @@ export default function App() {
       return undefined;
     }
 
+    const cachedCategories = loadCachedExcludedCategories(user);
+    if (cachedCategories.length > 0) {
+      setExcludedPortfolioCategories(cachedCategories);
+    }
+
     return subscribeToPortfolioSettings(
       user,
       (settings) => {
+        if (portfolioSettingsSaveInFlightRef.current) return;
         setExcludedPortfolioCategories(settings.excludedCategories);
+        cacheExcludedCategories(user, settings.excludedCategories);
       },
       (error) => {
         setGlobalError(error.message);
@@ -578,12 +615,17 @@ export default function App() {
       ? excludedPortfolioCategories.filter((item) => item !== category)
       : [...excludedPortfolioCategories, category];
 
+    portfolioSettingsSaveInFlightRef.current = true;
     setExcludedPortfolioCategories(nextCategories);
+    cacheExcludedCategories(user, nextCategories);
     try {
       await savePortfolioSettings(user, { excludedCategories: nextCategories });
+      portfolioSettingsSaveInFlightRef.current = false;
       setStatusMessage(`${category} ${nextCategories.includes(category) ? "excluded from" : "included in"} portfolio total P/L.`);
     } catch (error) {
+      portfolioSettingsSaveInFlightRef.current = false;
       setExcludedPortfolioCategories(excludedPortfolioCategories);
+      cacheExcludedCategories(user, excludedPortfolioCategories);
       setGlobalError(error instanceof Error ? error.message : `Failed to update ${category} total P/L setting.`);
     }
   };
@@ -1427,9 +1469,11 @@ export default function App() {
               <span>{category}</span>
               <strong>{numberFormatter.format(tradesByCategory[category].length)}</strong>
               <small>
-                U {formatCurrency(categorySummaries[category].unrealized)} / R{" "}
-                {formatCurrency(categorySummaries[category].realized)}
-                {excludedPortfolioCategorySet.has(category) ? " / excluded" : ""}
+                Open {formatCurrency(categorySummaries[category].unrealized)} (
+                {formatPercent(categorySummaries[category].unrealizedPercent)}) · Realized{" "}
+                {formatCurrency(categorySummaries[category].realized)} (
+                {formatPercent(categorySummaries[category].realizedPercent)})
+                {excludedPortfolioCategorySet.has(category) ? " · excluded" : ""}
               </small>
             </button>
           ))}
@@ -1445,12 +1489,14 @@ export default function App() {
               </span>
               <button
                 type="button"
-                className="text-button section-total-toggle"
+                className={`secondary-button section-total-toggle ${
+                  excludedPortfolioCategorySet.has(activeCategory) ? "active" : ""
+                }`}
                 onClick={() => void handleToggleCategoryPortfolioInclusion(activeCategory)}
               >
                 {excludedPortfolioCategorySet.has(activeCategory)
-                  ? "Include this section in portfolio total P/L"
-                  : "Exclude this section from portfolio total P/L"}
+                  ? "Include in total"
+                  : "Exclude from total"}
               </button>
             </div>
             <div className={`sheet-pl ${activeSummary.unrealized >= 0 ? "positive" : "negative"}`}>

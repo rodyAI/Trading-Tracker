@@ -369,8 +369,17 @@ textarea {
 
 .section-total-toggle {
   margin-top: 8px;
-  padding: 0;
-  text-align: left;
+  min-height: 34px;
+  padding: 7px 10px;
+  color: #d9eef4;
+  text-align: center;
+  justify-self: start;
+}
+
+.section-total-toggle.active {
+  color: #281803;
+  background: var(--warning);
+  border-color: var(--warning);
 }
 
 .sheet-pl {
