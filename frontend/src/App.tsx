@@ -726,16 +726,19 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (trade: TrackedTrade) => {
     if (!user) {
       setStatusMessage("Sign in before deleting trades.");
       return;
     }
 
+    const confirmed = window.confirm(`Delete ${trade.symbol}? This removes it from Firestore and cannot be undone.`);
+    if (!confirmed) return;
+
     try {
-      await deleteUserTrade(user, id);
-      setTrades((currentTrades) => currentTrades.filter((trade) => trade.id !== id));
-      if (form.id === id) setForm(emptyForm);
+      await deleteUserTrade(user, trade.id);
+      setTrades((currentTrades) => currentTrades.filter((currentTrade) => currentTrade.id !== trade.id));
+      if (form.id === trade.id) setForm(emptyForm);
       setStatusMessage("Trade deleted from Firestore.");
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Failed to delete trade.");
@@ -1036,7 +1039,7 @@ export default function App() {
       >
         {trade.excludeFromPortfolioTotals ? "Include Total" : "Exclude Total"}
       </button>
-      <button type="button" className="icon-button danger-button" onClick={() => void handleDelete(trade.id)} aria-label={`Delete ${trade.symbol}`}>
+      <button type="button" className="icon-button danger-button" onClick={() => void handleDelete(trade)} aria-label={`Delete ${trade.symbol}`}>
         Delete
       </button>
     </div>
