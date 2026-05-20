@@ -139,6 +139,7 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingTrades, setIsLoadingTrades] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const initialRefreshUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     return subscribeToAuth((nextUser) => {
@@ -151,6 +152,7 @@ export default function App() {
     if (!user) {
       setTrades([]);
       setIsLoadingTrades(false);
+      initialRefreshUserRef.current = null;
       setStatusMessage("Sign in to load your trades.");
       return undefined;
     }
@@ -255,6 +257,14 @@ export default function App() {
       setIsRefreshing(false);
     }
   }, [provider, trades, user]);
+
+  useEffect(() => {
+    if (!user || isLoadingTrades || trades.length === 0) return;
+    if (initialRefreshUserRef.current === user.uid) return;
+
+    initialRefreshUserRef.current = user.uid;
+    void refreshPrices();
+  }, [isLoadingTrades, refreshPrices, trades.length, user]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
