@@ -88,6 +88,19 @@ const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}
   }
 };
 
+const promiseWithTimeout = async <T,>(promise: Promise<T>, message: string) => {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), MARKET_DATA_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+};
+
 const fetchJson = async <T>(url: string) => {
   const response = await fetchWithTimeout(url, {
     headers: {
@@ -99,7 +112,10 @@ const fetchJson = async <T>(url: string) => {
     throw new Error(`Market data request failed with ${response.status}.`);
   }
 
-  return (await response.json()) as T;
+  return (await promiseWithTimeout(
+    response.json(),
+    `Market data response parsing timed out after ${Math.round(MARKET_DATA_TIMEOUT_MS / 1000)} seconds.`,
+  )) as T;
 };
 
 const getErrorMessage = async (response: Response, fallback: string) => {
@@ -143,7 +159,10 @@ const fetchWorkerQuotes = async (symbols: string[], provider?: MarketDataProvide
     throw new Error(await getErrorMessage(response, "Failed to fetch current prices from market-data Worker."));
   }
 
-  const payload = (await response.json()) as QuoteBatchResponse;
+  const payload = (await promiseWithTimeout(
+    response.json(),
+    `Market data response parsing timed out after ${Math.round(MARKET_DATA_TIMEOUT_MS / 1000)} seconds.`,
+  )) as QuoteBatchResponse;
   return {
     ...payload,
     errors: payload.errors.map((error) => ({
@@ -162,7 +181,10 @@ const fetchWorkerCandles = async (symbol: string, provider?: MarketDataProviderI
     throw new Error(await getErrorMessage(response, `Failed to fetch daily candles for ${symbol} from market-data Worker.`));
   }
 
-  return (await response.json()) as CandleResponse;
+  return (await promiseWithTimeout(
+    response.json(),
+    `Market data response parsing timed out after ${Math.round(MARKET_DATA_TIMEOUT_MS / 1000)} seconds.`,
+  )) as CandleResponse;
 };
 
 const getYahooChartUrl = (symbol: string, range: string, interval: string) => {
@@ -256,7 +278,10 @@ const getStockAnalysisFallback = async (symbolInput: string): Promise<MarketQuot
     throw new Error(`StockAnalysis fallback request failed with ${response.status}.`);
   }
 
-  const html = await response.text();
+  const html = await promiseWithTimeout(
+    response.text(),
+    `Market data response parsing timed out after ${Math.round(MARKET_DATA_TIMEOUT_MS / 1000)} seconds.`,
+  );
   const chartPoints = [...html.matchAll(/\{c:([0-9.]+)(?:,o:([0-9.]+))?,t:(\d+)\}/g)];
   const latestPoint = chartPoints.at(-1);
   const price = parseNumber(latestPoint?.[1]);

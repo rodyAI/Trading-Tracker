@@ -32,6 +32,7 @@ type SortKey = "symbol" | "profitLoss" | "riskReward" | "status";
 type SortDirection = "asc" | "desc";
 
 const PROVIDER_STORAGE_KEY = "swing-trading-tracker-provider";
+const REFRESH_STEP_TIMEOUT_MS = 30_000;
 
 const emptyForm: TradeFormValues = {
   category: "Swing",
@@ -112,6 +113,19 @@ const summarizeTrades = (items: TrackedTrade[]) => {
     unrealized,
     unrealizedPercent: invested > 0 ? (unrealized / invested) * 100 : null,
   };
+};
+
+const withTimeout = async <T,>(promise: Promise<T>, message: string) => {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), REFRESH_STEP_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
 };
 
 export default function App() {
@@ -230,7 +244,10 @@ export default function App() {
     setGlobalError("");
 
     try {
-      const response = await refreshTradeQuotes(symbols, provider);
+      const response = await withTimeout(
+        refreshTradeQuotes(symbols, provider),
+        "Price refresh timed out after 30 seconds. Try again in a moment.",
+      );
       const quoteBySymbol = new Map(response.quotes.map((quote) => [quote.symbol.toUpperCase(), quote]));
       const errorBySymbol = new Map(response.errors.map((error) => [error.symbol.toUpperCase(), error.message]));
 
@@ -247,13 +264,21 @@ export default function App() {
         };
       });
       setTrades(nextTrades);
-      await replaceUserTrades(user, nextTrades);
 
       const failures = response.errors.length;
       setStatusMessage(
         `Refreshed ${response.quotes.length} quote${response.quotes.length === 1 ? "" : "s"} from ${response.provider}.`,
       );
       setGlobalError(failures ? `${failures} symbol${failures === 1 ? "" : "s"} could not be refreshed.` : "");
+
+      try {
+        await withTimeout(
+          replaceUserTrades(user, nextTrades),
+          "Prices refreshed, but saving them to Firestore timed out. They may update again on the next refresh.",
+        );
+      } catch (saveError) {
+        setGlobalError(saveError instanceof Error ? saveError.message : "Prices refreshed, but saving them failed.");
+      }
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Unable to refresh current prices.");
       setStatusMessage("Price refresh failed.");
