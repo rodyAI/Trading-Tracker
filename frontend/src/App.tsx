@@ -736,7 +736,7 @@ export default function App() {
     if (!confirmed) return;
 
     try {
-      await deleteUserTrade(user, trade.id);
+      await deleteUserTrade(user, trade);
       setTrades((currentTrades) => currentTrades.filter((currentTrade) => currentTrade.id !== trade.id));
       if (form.id === trade.id) setForm(emptyForm);
       setStatusMessage("Trade deleted from Firestore.");

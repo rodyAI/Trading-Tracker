@@ -26,6 +26,8 @@ service cloud.firestore {
         "exitPrice",
         "exitDate",
         "excludeFromPortfolioTotals",
+        "isDeleted",
+        "deletedAt",
         "createdAt",
         "updatedAt"
       ];
@@ -78,6 +80,8 @@ service cloud.firestore {
         && optionalPositiveNumber(data, "exitPrice")
         && optionalDateString(data, "exitDate")
         && optionalBoolean(data, "excludeFromPortfolioTotals")
+        && optionalBoolean(data, "isDeleted")
+        && optionalTimestamp(data, "deletedAt")
         && optionalTimestamp(data, "createdAt")
         && optionalTimestamp(data, "updatedAt");
     }

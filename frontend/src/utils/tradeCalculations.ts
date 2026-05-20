@@ -19,6 +19,8 @@ export interface TrackedTrade {
   exitPrice?: number | null;
   exitDate?: string;
   excludeFromPortfolioTotals?: boolean;
+  isDeleted?: boolean;
+  deletedAt?: unknown;
   currentPrice?: number | null;
   currentPriceAsOf?: number | null;
   currentPriceProvider?: string | null;

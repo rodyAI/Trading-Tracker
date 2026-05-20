@@ -67,6 +67,7 @@ const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade 
     exitPrice: trade.exitPrice == null ? null : Number(trade.exitPrice),
     isClosed: Boolean(trade.isClosed),
     excludeFromPortfolioTotals: Boolean(trade.excludeFromPortfolioTotals),
+    isDeleted: Boolean(trade.isDeleted),
   };
 };
 
@@ -118,6 +119,7 @@ export const subscribeToUserTrades = (
       }
 
       const trades = snapshot.docs
+        .filter((item) => item.data().isDeleted !== true)
         .map((item) => fromFirestore(item.id, item.data()))
         .sort((left, right) => left.symbol.localeCompare(right.symbol));
       onNext(trades);
@@ -132,14 +134,29 @@ export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
   return stripDerivedMarketData(normalizeTrade(trade));
 };
 
-export const deleteUserTrade = async (user: User, id: string) => {
+export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
   const db = requireDb();
-  const ref = tradeDoc(user, id);
-  await deleteDoc(ref);
+  const ref = tradeDoc(user, trade.id);
+
+  await setDoc(ref, {
+    ...toFirestore({
+      ...trade,
+      isDeleted: true,
+    }),
+    isDeleted: true,
+    deletedAt: serverTimestamp(),
+  });
   await waitForPendingWrites(db);
 
+  try {
+    await deleteDoc(ref);
+    await waitForPendingWrites(db);
+  } catch {
+    return;
+  }
+
   const snapshot = await getDocFromServer(ref);
-  if (snapshot.exists()) {
+  if (snapshot.exists() && snapshot.data().isDeleted !== true) {
     throw new Error("Trade delete did not reach Firestore. Please try again.");
   }
 };
