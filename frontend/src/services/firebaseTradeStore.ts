@@ -103,6 +103,27 @@ export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
   return stripTransientMarketData(normalizeTrade(trade));
 };
 
+export const saveUserTradeRecommendations = async (user: User, trades: TrackedTrade[]) => {
+  const batch = writeBatch(requireDb());
+  const normalizedTrades = trades.map((trade) => stripTransientMarketData(normalizeTrade(trade)));
+
+  for (const trade of normalizedTrades) {
+    batch.set(
+      tradeDoc(user, trade.id),
+      {
+        recommendedTakeProfit: trade.recommendedTakeProfit ?? null,
+        recommendationExplanation: trade.recommendationExplanation ?? "",
+        updatedAt: serverTimestamp(),
+        ...transientMarketDataDeletes(),
+      },
+      { merge: true },
+    );
+  }
+
+  await batch.commit();
+  return normalizedTrades;
+};
+
 export const deleteUserTrade = (user: User, id: string) => deleteDoc(tradeDoc(user, id));
 
 export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {

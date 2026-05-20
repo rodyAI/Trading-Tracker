@@ -10,7 +10,13 @@ import {
   subscribeToAuth,
   type User,
 } from "./firebase/client";
-import { deleteUserTrade, importUserTrades, saveUserTrade, subscribeToUserTrades } from "./services/firebaseTradeStore";
+import {
+  deleteUserTrade,
+  importUserTrades,
+  saveUserTrade,
+  saveUserTradeRecommendations,
+  subscribeToUserTrades,
+} from "./services/firebaseTradeStore";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
   TRADE_CATEGORIES,
@@ -33,7 +39,8 @@ type SortDirection = "asc" | "desc";
 
 const PROVIDER_STORAGE_KEY = "swing-trading-tracker-provider";
 const REFRESH_STEP_TIMEOUT_MS = 30_000;
-const formatTimeoutSeconds = () => Math.round(REFRESH_STEP_TIMEOUT_MS / 1000);
+const FIRESTORE_SAVE_TIMEOUT_MS = 60_000;
+const formatTimeoutSeconds = (timeoutMs = REFRESH_STEP_TIMEOUT_MS) => Math.round(timeoutMs / 1000);
 
 const emptyForm: TradeFormValues = {
   category: "Swing",
@@ -116,10 +123,10 @@ const summarizeTrades = (items: TrackedTrade[]) => {
   };
 };
 
-const withTimeout = async <T,>(promise: Promise<T>, message: string) => {
+const withTimeout = async <T,>(promise: Promise<T>, message: string, timeoutMs = REFRESH_STEP_TIMEOUT_MS) => {
   let timeoutId: number | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error(message)), REFRESH_STEP_TIMEOUT_MS);
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
   });
 
   try {
@@ -341,6 +348,7 @@ export default function App() {
 
     const updatedRecommendations: TrackedTrade[] = [];
     const failures: string[] = [];
+    let saveErrorMessage = "";
 
     try {
       for (const [index, trade] of tabTrades.entries()) {
@@ -351,13 +359,9 @@ export default function App() {
 
         try {
           const recalculatedTrade = await enrichTradeRecommendation(trade);
-          const savedTrade = await withTimeout(
-            saveUserTrade(user, recalculatedTrade),
-            `Saving recommendation for ${trade.symbol} to Firestore timed out after ${formatTimeoutSeconds()} seconds.`,
-          );
-          updatedRecommendations.push(savedTrade);
+          updatedRecommendations.push(recalculatedTrade);
         } catch (error) {
-          failures.push(`${trade.symbol}: ${error instanceof Error ? error.message : "Save failed."}`);
+          failures.push(`${trade.symbol}: ${error instanceof Error ? error.message : "Recommendation calculation failed."}`);
         }
       }
 
@@ -374,6 +378,22 @@ export default function App() {
             };
           }),
         );
+
+        setStatusMessage(`Saving ${updatedRecommendations.length} ${activeCategory} recommendation updates to Firestore...`);
+        try {
+          await withTimeout(
+            saveUserTradeRecommendations(user, updatedRecommendations),
+            `Saving recommendation updates to Firestore timed out after ${formatTimeoutSeconds(
+              FIRESTORE_SAVE_TIMEOUT_MS,
+            )} seconds. The screen was updated, and the save may still complete in the background.`,
+            FIRESTORE_SAVE_TIMEOUT_MS,
+          );
+        } catch (error) {
+          saveErrorMessage =
+            error instanceof Error
+              ? error.message
+              : "Recommendation updates were shown on screen, but saving them to Firestore failed.";
+        }
       }
 
       setStatusMessage(
@@ -381,7 +401,11 @@ export default function App() {
           updatedRecommendations.length === 1 ? "" : "s"
         }.`,
       );
-      setGlobalError(failures.length > 0 ? `Some recommendations could not be saved. ${failures.join(" ")}` : "");
+      setGlobalError(
+        [failures.length > 0 ? `Some recommendations could not be recalculated. ${failures.join(" ")}` : "", saveErrorMessage]
+          .filter(Boolean)
+          .join(" "),
+      );
     } finally {
       isRecalculatingRecommendationsRef.current = false;
       setIsRecalculatingRecommendations(false);
