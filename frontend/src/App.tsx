@@ -137,6 +137,18 @@ const isRecommendationDataError = (trade: TrackedTrade) =>
   trade.recommendationExplanation?.startsWith("Candle data could not be loaded") ||
   trade.recommendationExplanation?.startsWith("Candle data was unavailable");
 
+const mergeTransientMarketData = (trade: TrackedTrade, existing: TrackedTrade | undefined): TrackedTrade => {
+  if (!existing || existing.symbol !== trade.symbol) return trade;
+
+  return {
+    ...trade,
+    currentPrice: existing.currentPrice ?? null,
+    currentPriceAsOf: existing.currentPriceAsOf ?? null,
+    currentPriceProvider: existing.currentPriceProvider ?? null,
+    priceError: existing.priceError ?? null,
+  };
+};
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -160,10 +172,12 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRecalculatingRecommendations, setIsRecalculatingRecommendations] = useState(false);
   const [isLoadingTrades, setIsLoadingTrades] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const initialRefreshUserRef = useRef<string | null>(null);
   const isRefreshingRef = useRef(false);
+  const isRecalculatingRecommendationsRef = useRef(false);
 
   useEffect(() => {
     return subscribeToAuth((nextUser) => {
@@ -187,7 +201,14 @@ export default function App() {
     return subscribeToUserTrades(
       user,
       (nextTrades) => {
-        setTrades(nextTrades);
+        setTrades((currentTrades) =>
+          nextTrades.map((trade) =>
+            mergeTransientMarketData(
+              trade,
+              currentTrades.find((currentTrade) => currentTrade.id === trade.id),
+            ),
+          ),
+        );
         setIsLoadingTrades(false);
         setStatusMessage(`Loaded ${nextTrades.length} trade${nextTrades.length === 1 ? "" : "s"} from Firestore.`);
       },
@@ -292,6 +313,68 @@ export default function App() {
       setIsRefreshing(false);
     }
   }, [provider, trades, user]);
+
+  const recalculateSellRecommendations = useCallback(async () => {
+    if (isRecalculatingRecommendationsRef.current) return;
+
+    if (!user) {
+      setStatusMessage("Sign in to recalculate sell recommendations.");
+      return;
+    }
+
+    if (trades.length === 0) {
+      setStatusMessage("No trades to recalculate yet.");
+      return;
+    }
+
+    isRecalculatingRecommendationsRef.current = true;
+    setIsRecalculatingRecommendations(true);
+    setGlobalError("");
+
+    const updatedRecommendations: TrackedTrade[] = [];
+    const failures: string[] = [];
+
+    try {
+      for (const [index, trade] of trades.entries()) {
+        setStatusMessage(
+          `Recalculating sell recommendations ${index + 1}/${trades.length}: ${trade.symbol}`,
+        );
+
+        try {
+          const recalculatedTrade = await enrichTradeRecommendation(trade);
+          await saveUserTrade(user, recalculatedTrade);
+          updatedRecommendations.push(recalculatedTrade);
+        } catch (error) {
+          failures.push(`${trade.symbol}: ${error instanceof Error ? error.message : "Save failed."}`);
+        }
+      }
+
+      if (updatedRecommendations.length > 0) {
+        setTrades((currentTrades) =>
+          currentTrades.map((trade) => {
+            const updatedTrade = updatedRecommendations.find((candidate) => candidate.id === trade.id);
+            if (!updatedTrade) return trade;
+
+            return {
+              ...trade,
+              recommendedTakeProfit: updatedTrade.recommendedTakeProfit,
+              recommendationExplanation: updatedTrade.recommendationExplanation,
+            };
+          }),
+        );
+      }
+
+      setStatusMessage(
+        `Recalculated ${updatedRecommendations.length} sell recommendation${
+          updatedRecommendations.length === 1 ? "" : "s"
+        }.`,
+      );
+      setGlobalError(failures.length > 0 ? `Some recommendations could not be saved. ${failures.join(" ")}` : "");
+    } finally {
+      isRecalculatingRecommendationsRef.current = false;
+      setIsRecalculatingRecommendations(false);
+    }
+  }, [enrichTradeRecommendation, trades, user]);
 
   useEffect(() => {
     if (!user || isLoadingTrades || trades.length === 0) return;
@@ -897,6 +980,14 @@ export default function App() {
           </p>
           <button type="button" className="primary-button full-width" onClick={() => void refreshPrices()} disabled={isRefreshing}>
             {isRefreshing ? "Refreshing..." : "Refresh Prices"}
+          </button>
+          <button
+            type="button"
+            className="secondary-button full-width"
+            onClick={() => void recalculateSellRecommendations()}
+            disabled={isRecalculatingRecommendations || trades.length === 0}
+          >
+            {isRecalculatingRecommendations ? "Recalculating..." : "Recalculate Sell Recommendations"}
           </button>
           <div className="utility-actions">
             <button type="button" className="secondary-button" onClick={exportCsv} disabled={trades.length === 0}>Export CSV</button>
