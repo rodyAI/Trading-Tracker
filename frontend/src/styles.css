@@ -137,6 +137,22 @@ label span,
   color: var(--negative);
 }
 
+.top-message-panel {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.top-message-panel p {
+  margin: 0;
+}
+
+.top-message-panel p + p {
+  margin-top: 8px;
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.7fr);

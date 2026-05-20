@@ -238,6 +238,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
   const [persistenceDiagnostics, setPersistenceDiagnostics] = useState("");
+  const [deleteResult, setDeleteResult] = useState("");
   const [lastServerSync, setLastServerSync] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculatingRecommendations, setIsRecalculatingRecommendations] = useState(false);
@@ -721,17 +722,26 @@ export default function App() {
     if (!confirmed) return;
 
     setGlobalError("");
+    setDeleteResult("");
     setStatusMessage(`Deleting ${trade.symbol} from Firestore...`);
 
     try {
-      await deleteUserTrade(user, trade);
+      const result = await deleteUserTrade(user, trade);
       setTrades((currentTrades) =>
         currentTrades.filter((currentTrade) => currentTrade.symbol.toUpperCase() !== trade.symbol.toUpperCase()),
       );
       if (form.id === trade.id) setForm(emptyForm);
+      setDeleteResult(
+        `${result.symbol} delete confirmed. Deleted server doc ids: ${
+          result.matchedIds.length > 0 ? result.matchedIds.join(", ") : "none found before delete"
+        }. Remaining server ids: none.`,
+      );
       setStatusMessage(`${trade.symbol} delete confirmed by Firestore.`);
     } catch (error) {
-      setGlobalError(error instanceof Error ? error.message : "Failed to delete trade.");
+      const message = error instanceof Error ? error.message : "Failed to delete trade.";
+      setGlobalError(message);
+      setDeleteResult(`Delete failed for ${trade.symbol}: ${message}`);
+      setStatusMessage(`${trade.symbol} delete failed.`);
     }
   };
 
@@ -1373,6 +1383,12 @@ export default function App() {
           </article>
         </div>
       </section>
+      {(globalError || deleteResult) && (
+        <section className="top-message-panel" aria-live="polite">
+          {globalError && <p className="error-text">{globalError}</p>}
+          {deleteResult && <p className="meta-text">{deleteResult}</p>}
+        </section>
+      )}
 
       <section className="workspace-grid">
         <form className="trade-form panel" onSubmit={handleSubmit}>

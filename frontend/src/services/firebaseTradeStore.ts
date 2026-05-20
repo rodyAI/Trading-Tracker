@@ -156,6 +156,12 @@ export interface TradePersistenceDiagnostics {
   visibleTradeIds: string[];
 }
 
+export interface DeleteTradeResult {
+  symbol: string;
+  matchedIds: string[];
+  remainingIds: string[];
+}
+
 export const loadTradePersistenceDiagnostics = async (user: User): Promise<TradePersistenceDiagnostics> => {
   const [tradeSnapshot, deletedSnapshot, deletedSymbolSnapshot] = await Promise.all([
     getDocsFromServer(tradesCollection(user)),
@@ -270,12 +276,13 @@ export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
   return stripDerivedMarketData(normalizeTrade(trade));
 };
 
-export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
+export const deleteUserTrade = async (user: User, trade: TrackedTrade): Promise<DeleteTradeResult> => {
   const db = requireDb();
   const symbol = trade.symbol.trim().toUpperCase();
   const matchingTradeDocs = (await getDocsFromServer(tradesCollection(user))).docs.filter(
     (item) => String(item.data().symbol ?? "").trim().toUpperCase() === symbol,
   );
+  const matchedIds = matchingTradeDocs.map((item) => item.id);
   const idToken = await user.getIdToken(true);
   const batch = writeBatch(db);
 
@@ -311,14 +318,18 @@ export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
 
   const refreshedTrades = await getDocsFromServer(tradesCollection(user));
 
-  const stillExists = refreshedTrades.docs.some((item) => {
+  const remainingIds = refreshedTrades.docs
+    .filter((item) => {
     const data = item.data();
     return String(data.symbol ?? "").trim().toUpperCase() === symbol;
-  });
+    })
+    .map((item) => item.id);
 
-  if (stillExists) {
-    throw new Error(`${symbol} still exists in Firestore after delete. Please try again.`);
+  if (remainingIds.length > 0) {
+    throw new Error(`${symbol} still exists in Firestore after delete. Remaining document ids: ${remainingIds.join(", ")}.`);
   }
+
+  return { symbol, matchedIds, remainingIds };
 };
 
 export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {
