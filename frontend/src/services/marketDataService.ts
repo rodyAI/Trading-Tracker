@@ -56,6 +56,12 @@ interface BiQuoteResponse {
   timestamp?: string;
 }
 
+interface FailedAttempt {
+  source: string;
+  status: "failed";
+  message: string;
+}
+
 const normalizeSymbol = (symbol: string) => symbol.trim().toUpperCase();
 const workerApiBase = import.meta.env.VITE_MARKET_API_BASE_URL?.replace(/\/$/, "") ?? "";
 const WORKER_QUOTE_BATCH_SIZE = 8;
@@ -72,6 +78,7 @@ const parseNumber = (value: string | number | null | undefined) => {
 const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}) => {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), MARKET_DATA_TIMEOUT_MS);
+  const requestUrl = input instanceof URL ? input.toString() : typeof input === "string" ? input : input.url;
 
   try {
     return await fetch(input, {
@@ -80,9 +87,14 @@ const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Market data request timed out after ${Math.round(MARKET_DATA_TIMEOUT_MS / 1000)} seconds.`);
+      throw new Error(
+        `Market data request timed out after ${Math.round(MARKET_DATA_TIMEOUT_MS / 1000)} seconds. URL: ${requestUrl}`,
+      );
     }
-    throw error;
+    const browserMessage = error instanceof Error ? error.message : "Unknown browser network error.";
+    throw new Error(
+      `Market data request could not reach ${requestUrl}. Browser reported: ${browserMessage}. Check the network connection and whether the market-data endpoint is reachable.`,
+    );
   } finally {
     window.clearTimeout(timeout);
   }
@@ -118,10 +130,15 @@ const fetchJson = async <T>(url: string) => {
   )) as T;
 };
 
+const formatAttempts = (attempts: FailedAttempt[] | undefined) => {
+  if (!attempts?.length) return "";
+  return ` Steps tried: ${attempts.map((attempt, index) => `${index + 1}. ${attempt.source}: ${attempt.message}`).join(" ")}`;
+};
+
 const getErrorMessage = async (response: Response, fallback: string) => {
   try {
-    const payload = (await response.json()) as { error?: string };
-    return payload.error ?? fallback;
+    const payload = (await response.json()) as { error?: string; attempts?: FailedAttempt[] };
+    return `${payload.error ?? fallback}${formatAttempts(payload.attempts)}`;
   } catch {
     return fallback;
   }
@@ -130,11 +147,7 @@ const getErrorMessage = async (response: Response, fallback: string) => {
 const formatQuoteError = (error: QuoteBatchResponse["errors"][number]) => {
   if (!error.attempts?.length) return error.message;
 
-  const attemptSummary = error.attempts
-    .map((attempt, index) => `${index + 1}. ${attempt.source}: ${attempt.message}`)
-    .join(" ");
-
-  return `${error.message} Steps tried: ${attemptSummary}`;
+  return `${error.message}${formatAttempts(error.attempts)}`;
 };
 
 const chunk = <T,>(items: T[], size: number) => {

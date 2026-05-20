@@ -96,10 +96,15 @@ const fetchWithTimeout = async (url: string, headers: Record<string, string> = {
   }
 };
 
+const redactProviderMessage = (message: string) => {
+  const redactedKey = config.alphaVantageApiKey ? message.replaceAll(config.alphaVantageApiKey, "[redacted]") : message;
+  return redactedKey.replace(/API key as [A-Z0-9]+/gi, "API key as [redacted]");
+};
+
 const assertAlphaVantagePayload = (payload: AlphaVantageGlobalQuoteResponse | AlphaVantageDailyResponse) => {
   const message = payload.Note ?? payload.Information ?? payload.ErrorMessage;
   if (message) {
-    throw new Error(message);
+    throw new Error(redactProviderMessage(message));
   }
 };
 
@@ -217,7 +222,6 @@ export class MarketDataService {
     const payload = await fetchAlphaVantageJson<AlphaVantageDailyResponse>({
       function: "TIME_SERIES_DAILY",
       symbol,
-      outputsize: "full",
     });
 
     const series = payload["Time Series (Daily)"] ?? {};

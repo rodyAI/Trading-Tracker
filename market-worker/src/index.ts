@@ -217,9 +217,14 @@ const getYahooQuoteApi = async (symbol: string, env: Env): Promise<MarketQuote> 
   };
 };
 
-const assertAlphaVantagePayload = (payload: AlphaVantageGlobalQuoteResponse | AlphaVantageDailyResponse) => {
+const redactProviderMessage = (message: string, apiKey: string | undefined) => {
+  const redactedKey = apiKey ? message.replaceAll(apiKey, "[redacted]") : message;
+  return redactedKey.replace(/API key as [A-Z0-9]+/gi, "API key as [redacted]");
+};
+
+const assertAlphaVantagePayload = (payload: AlphaVantageGlobalQuoteResponse | AlphaVantageDailyResponse, env: Env) => {
   const message = payload.Note ?? payload.Information ?? payload.ErrorMessage;
-  if (message) throw new Error(message);
+  if (message) throw new Error(redactProviderMessage(message, env.ALPHA_VANTAGE_API_KEY));
 };
 
 const alphaVantageUrl = (params: Record<string, string>, env: Env) => {
@@ -238,7 +243,7 @@ const fetchAlphaVantageJson = async <T extends AlphaVantageGlobalQuoteResponse |
   env: Env,
 ) => {
   const payload = await fetchJson<T>(alphaVantageUrl(params, env));
-  assertAlphaVantagePayload(payload);
+  assertAlphaVantagePayload(payload, env);
   return payload;
 };
 
@@ -269,7 +274,6 @@ const getAlphaVantageDailyCandles = async (symbol: string, env: Env): Promise<Ma
     {
       function: "TIME_SERIES_DAILY",
       symbol,
-      outputsize: "full",
     },
     env,
   );
@@ -358,21 +362,34 @@ const getQuote = async (symbol: string, provider: MarketDataProviderId, env: Env
 };
 
 const getDailyCandles = async (symbol: string, provider: MarketDataProviderId, env: Env) => {
-  const errors: string[] = [];
-  const attempts: Array<() => Promise<MarketCandle[]>> =
+  const attempts: FailedAttempt[] = [];
+  const providers: Array<{ source: string; fetchCandles: () => Promise<MarketCandle[]> }> =
     provider === "alphavantage"
-      ? [() => getAlphaVantageDailyCandles(symbol, env), () => getYahooDailyCandles(symbol, env)]
-      : [() => getYahooDailyCandles(symbol, env), () => getAlphaVantageDailyCandles(symbol, env)];
+      ? [
+          { source: "Alpha Vantage daily candles", fetchCandles: () => getAlphaVantageDailyCandles(symbol, env) },
+          { source: "Yahoo daily chart API", fetchCandles: () => getYahooDailyCandles(symbol, env) },
+        ]
+      : [
+          { source: "Yahoo daily chart API", fetchCandles: () => getYahooDailyCandles(symbol, env) },
+          { source: "Alpha Vantage daily candles", fetchCandles: () => getAlphaVantageDailyCandles(symbol, env) },
+        ];
 
-  for (const attempt of attempts) {
+  for (const attempt of providers) {
     try {
-      return await attempt();
+      return await attempt.fetchCandles();
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : "Unknown candle error.");
+      attempts.push({
+        source: attempt.source,
+        status: "failed",
+        message: error instanceof Error ? error.message : "Unknown candle error.",
+      });
     }
   }
 
-  throw new Error(errors.join(" "));
+  throw new MarketDataError(
+    `Could not fetch daily candle history for ${symbol}. Tried ${attempts.map((attempt) => attempt.source).join(", ")}.`,
+    attempts,
+  );
 };
 
 const getYahooDailyCandles = async (symbol: string, env: Env): Promise<MarketCandle[]> => {
@@ -475,7 +492,14 @@ export default {
 
       return json({ error: "Not found" }, 404, corsHeaders);
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : "Market data request failed." }, 500, corsHeaders);
+      return json(
+        {
+          error: error instanceof Error ? error.message : "Market data request failed.",
+          attempts: error instanceof MarketDataError ? error.attempts : undefined,
+        },
+        500,
+        corsHeaders,
+      );
     }
   },
 };

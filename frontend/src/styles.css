@@ -264,7 +264,8 @@ textarea {
 }
 
 .field-error,
-.error-text {
+.error-text,
+.recommendation-error {
   color: #ff9d9a;
   font-size: 0.82rem;
   line-height: 1.4;
@@ -478,6 +479,10 @@ td small {
   line-height: 1.35;
 }
 
+td small.recommendation-error {
+  color: #ff9d9a;
+}
+
 .trade-row.positive {
   box-shadow: inset 4px 0 0 var(--positive);
 }
@@ -586,6 +591,16 @@ td small {
   background: var(--panel-soft);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.recommendation-box.failed {
+  background: rgba(239, 111, 108, 0.1);
+  border-color: rgba(239, 111, 108, 0.42);
+}
+
+.recommendation-box.failed span,
+.recommendation-box.failed p {
+  color: #ffb4b1;
 }
 
 .metric-grid strong,

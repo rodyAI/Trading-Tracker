@@ -128,6 +128,15 @@ const withTimeout = async <T,>(promise: Promise<T>, message: string) => {
   }
 };
 
+const formatRecommendationDataError = (symbol: string, provider: MarketDataProviderId, error: unknown) => {
+  const message = error instanceof Error ? error.message : "Unknown candle data error.";
+  return `Candle data could not be loaded for ${symbol} using ${provider}. The sell recommendation fell back to the default model. Error details: ${message}`;
+};
+
+const isRecommendationDataError = (trade: TrackedTrade) =>
+  trade.recommendationExplanation?.startsWith("Candle data could not be loaded") ||
+  trade.recommendationExplanation?.startsWith("Candle data was unavailable");
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -215,10 +224,7 @@ export default function App() {
         return {
           ...trade,
           recommendedTakeProfit: recommendation.price,
-          recommendationExplanation:
-            error instanceof Error
-              ? `Candle data was unavailable (${error.message}), so the sell recommendation uses the fallback model.`
-              : recommendation.explanation,
+          recommendationExplanation: formatRecommendationDataError(trade.symbol, provider, error),
         };
       }
     },
@@ -569,6 +575,7 @@ export default function App() {
 
   const renderTradeRow = (trade: TrackedTrade) => {
     const metrics = tradeMetrics(trade);
+    const recommendationFailed = isRecommendationDataError(trade);
     const tone = isNearStopOrTarget(trade)
       ? "warning"
       : metrics.profitLoss != null && metrics.profitLoss >= 0
@@ -593,7 +600,9 @@ export default function App() {
         <td>{trade.takeProfit == null ? "Not set" : formatPrice(trade.takeProfit)}</td>
         <td>
           <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
-          <small>{trade.recommendationExplanation}</small>
+          <small className={recommendationFailed ? "recommendation-error" : undefined}>
+            {trade.recommendationExplanation}
+          </small>
         </td>
         <td>
           {formatPrice(trade.currentPrice)}
@@ -614,6 +623,7 @@ export default function App() {
 
   const renderTradeCard = (trade: TrackedTrade) => {
     const metrics = tradeMetrics(trade);
+    const recommendationFailed = isRecommendationDataError(trade);
     const tone = isNearStopOrTarget(trade)
       ? "warning"
       : metrics.profitLoss != null && metrics.profitLoss >= 0
@@ -658,7 +668,7 @@ export default function App() {
             R/R<strong>{metrics.riskRewardRatio == null ? "Unavailable" : metrics.riskRewardRatio.toFixed(2)}</strong>
           </span>
         </div>
-        <div className="recommendation-box">
+        <div className={`recommendation-box ${recommendationFailed ? "failed" : ""}`}>
           <span>Recommended Sell</span>
           <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
           <p>{trade.recommendationExplanation}</p>
