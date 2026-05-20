@@ -1,4 +1,4 @@
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, type Unsubscribe } from "firebase/firestore";
+import { doc, getDocFromServer, onSnapshot, serverTimestamp, setDoc, waitForPendingWrites, type Unsubscribe } from "firebase/firestore";
 import { requireDb, type User } from "../firebase/client";
 import { TRADE_CATEGORIES, type TradeCategory } from "../utils/tradeCalculations";
 
@@ -37,16 +37,18 @@ export const subscribeToPortfolioSettings = (
   );
 
 export const savePortfolioSettings = async (user: User, settings: PortfolioSettings) => {
+  const db = requireDb();
+  const ref = settingsDoc(user);
   await setDoc(
-    settingsDoc(user),
+    ref,
     {
       excludedCategories: settings.excludedCategories,
       updatedAt: serverTimestamp(),
-    },
-    { merge: true },
+    }
   );
+  await waitForPendingWrites(db);
 
-  const snapshot = await getDoc(settingsDoc(user));
+  const snapshot = await getDocFromServer(ref);
   if (!snapshot.exists()) throw new Error("Portfolio settings were not found after saving.");
   return { ...normalizeSettings(snapshot.data()), exists: true };
 };

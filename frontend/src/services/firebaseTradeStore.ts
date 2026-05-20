@@ -3,10 +3,12 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDocFromServer,
   getDocs,
   onSnapshot,
   serverTimestamp,
   setDoc,
+  waitForPendingWrites,
   writeBatch,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -124,15 +126,23 @@ export const subscribeToUserTrades = (
   );
 
 export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
-  await setDoc(
-    tradeDoc(user, trade.id),
-    { ...toFirestore(trade), ...derivedMarketDataDeletes() },
-    { merge: true },
-  );
+  const db = requireDb();
+  await setDoc(tradeDoc(user, trade.id), toFirestore(trade));
+  await waitForPendingWrites(db);
   return stripDerivedMarketData(normalizeTrade(trade));
 };
 
-export const deleteUserTrade = (user: User, id: string) => deleteDoc(tradeDoc(user, id));
+export const deleteUserTrade = async (user: User, id: string) => {
+  const db = requireDb();
+  const ref = tradeDoc(user, id);
+  await deleteDoc(ref);
+  await waitForPendingWrites(db);
+
+  const snapshot = await getDocFromServer(ref);
+  if (snapshot.exists()) {
+    throw new Error("Trade delete did not reach Firestore. Please try again.");
+  }
+};
 
 export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {
   const batch = writeBatch(requireDb());
@@ -143,6 +153,7 @@ export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {
   }
 
   await batch.commit();
+  await waitForPendingWrites(requireDb());
   return normalizedTrades;
 };
 
@@ -160,5 +171,6 @@ export const replaceUserTrades = async (user: User, trades: TrackedTrade[]) => {
   }
 
   await batch.commit();
+  await waitForPendingWrites(requireDb());
   return normalizedTrades;
 };
