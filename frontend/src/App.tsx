@@ -33,6 +33,7 @@ type SortDirection = "asc" | "desc";
 
 const PROVIDER_STORAGE_KEY = "swing-trading-tracker-provider";
 const REFRESH_STEP_TIMEOUT_MS = 30_000;
+const formatTimeoutSeconds = () => Math.round(REFRESH_STEP_TIMEOUT_MS / 1000);
 
 const emptyForm: TradeFormValues = {
   category: "Swing",
@@ -173,6 +174,7 @@ export default function App() {
   const [globalError, setGlobalError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculatingRecommendations, setIsRecalculatingRecommendations] = useState(false);
+  const [recommendationProgress, setRecommendationProgress] = useState<{ current: number; total: number } | null>(null);
   const [isLoadingTrades, setIsLoadingTrades] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const initialRefreshUserRef = useRef<string | null>(null);
@@ -228,7 +230,10 @@ export default function App() {
   const enrichTradeRecommendation = useCallback(
     async (trade: TrackedTrade) => {
       try {
-        const response = await loadTradeCandles(trade.symbol, provider);
+        const response = await withTimeout(
+          loadTradeCandles(trade.symbol, provider),
+          `Candle data request for ${trade.symbol} timed out after ${formatTimeoutSeconds()} seconds.`,
+        );
         const recommendation = recommendTakeProfit(
           trade.entryPrice,
           trade.stopLoss,
@@ -330,20 +335,25 @@ export default function App() {
     isRecalculatingRecommendationsRef.current = true;
     setIsRecalculatingRecommendations(true);
     setGlobalError("");
+    setRecommendationProgress({ current: 0, total: trades.length });
 
     const updatedRecommendations: TrackedTrade[] = [];
     const failures: string[] = [];
 
     try {
       for (const [index, trade] of trades.entries()) {
+        setRecommendationProgress({ current: index + 1, total: trades.length });
         setStatusMessage(
           `Recalculating sell recommendations ${index + 1}/${trades.length}: ${trade.symbol}`,
         );
 
         try {
           const recalculatedTrade = await enrichTradeRecommendation(trade);
-          await saveUserTrade(user, recalculatedTrade);
-          updatedRecommendations.push(recalculatedTrade);
+          const savedTrade = await withTimeout(
+            saveUserTrade(user, recalculatedTrade),
+            `Saving recommendation for ${trade.symbol} to Firestore timed out after ${formatTimeoutSeconds()} seconds.`,
+          );
+          updatedRecommendations.push(savedTrade);
         } catch (error) {
           failures.push(`${trade.symbol}: ${error instanceof Error ? error.message : "Save failed."}`);
         }
@@ -373,6 +383,7 @@ export default function App() {
     } finally {
       isRecalculatingRecommendationsRef.current = false;
       setIsRecalculatingRecommendations(false);
+      setRecommendationProgress(null);
     }
   }, [enrichTradeRecommendation, trades, user]);
 
@@ -987,7 +998,9 @@ export default function App() {
             onClick={() => void recalculateSellRecommendations()}
             disabled={isRecalculatingRecommendations || trades.length === 0}
           >
-            {isRecalculatingRecommendations ? "Recalculating..." : "Recalculate Sell Recommendations"}
+            {isRecalculatingRecommendations
+              ? `Recalculating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? trades.length}...`
+              : "Recalculate Sell Recommendations"}
           </button>
           <div className="utility-actions">
             <button type="button" className="secondary-button" onClick={exportCsv} disabled={trades.length === 0}>Export CSV</button>
