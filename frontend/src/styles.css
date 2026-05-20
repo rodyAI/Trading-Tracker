@@ -617,7 +617,12 @@ td small.recommendation-error {
   gap: 10px;
 }
 
+.mobile-primary-grid {
+  display: none;
+}
+
 .metric-grid span,
+.mobile-primary-grid span,
 .recommendation-box {
   display: grid;
   gap: 4px;
@@ -638,6 +643,7 @@ td small.recommendation-error {
 }
 
 .metric-grid strong,
+.mobile-primary-grid strong,
 .recommendation-box strong {
   overflow-wrap: anywhere;
 }
@@ -737,6 +743,11 @@ td small.recommendation-error {
   white-space: normal;
 }
 
+.mobile-details,
+.mobile-error-details {
+  display: none;
+}
+
 @media (max-width: 1080px) {
   .top-band,
   .workspace-grid,
@@ -751,13 +762,65 @@ td small.recommendation-error {
 
 @media (max-width: 760px) {
   .page-shell {
-    width: min(100% - 20px, 1480px);
-    padding-top: 18px;
+    width: min(100% - 14px, 1480px);
+    padding: 12px 0 28px;
   }
 
   .top-band h1 {
-    font-size: 2.15rem;
+    font-size: 1.7rem;
     line-height: 1.05;
+  }
+
+  .top-band {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .lede {
+    margin: 10px 0;
+    font-size: 0.92rem;
+    line-height: 1.45;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .summary-card {
+    min-height: auto;
+    padding: 12px;
+    gap: 5px;
+  }
+
+  .summary-card strong {
+    font-size: 1.25rem;
+  }
+
+  .workspace-grid {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .form-grid {
+    gap: 10px;
+  }
+
+  input,
+  select,
+  textarea {
+    padding: 10px 11px;
+  }
+
+  .primary-button,
+  .secondary-button,
+  .icon-button,
+  .sort-controls button {
+    min-height: 36px;
+    padding: 8px 10px;
+  }
+
+  .section-heading {
+    margin-bottom: 10px;
   }
 
   .summary-grid,
@@ -776,6 +839,135 @@ td small.recommendation-error {
 
   .mobile-cards {
     display: grid;
-    gap: 14px;
+    gap: 8px;
+  }
+
+  .trade-card {
+    gap: 9px;
+    padding: 10px;
+    box-shadow: none;
+  }
+
+  .card-heading {
+    align-items: start;
+    gap: 8px;
+  }
+
+  .card-heading h3 {
+    font-size: 1rem;
+  }
+
+  .card-heading p {
+    font-size: 0.78rem;
+  }
+
+  .status-pill {
+    min-height: 24px;
+    padding: 4px 7px;
+    font-size: 0.7rem;
+  }
+
+  .mobile-primary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .mobile-primary-grid span,
+  .metric-grid span,
+  .recommendation-box {
+    padding: 8px;
+  }
+
+  .mobile-primary-grid span,
+  .metric-grid span {
+    font-size: 0.74rem;
+  }
+
+  .mobile-primary-grid strong,
+  .metric-grid strong {
+    font-size: 0.9rem;
+  }
+
+  .mobile-details,
+  .mobile-error-details {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-soft);
+  }
+
+  .mobile-details summary,
+  .mobile-error-details summary {
+    min-height: 34px;
+    padding: 8px 10px;
+    color: var(--accent-strong);
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 900;
+  }
+
+  .mobile-error-details {
+    border-color: rgba(239, 111, 108, 0.36);
+    background: rgba(239, 111, 108, 0.08);
+  }
+
+  .mobile-error-details summary {
+    color: #ffb4b1;
+  }
+
+  .mobile-details .metric-grid,
+  .mobile-details .recommendation-box,
+  .mobile-details .notes-text,
+  .mobile-details .row-actions,
+  .mobile-error-details p {
+    margin: 0 8px 8px;
+  }
+
+  .mobile-details .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .mobile-details .row-actions {
+    gap: 6px;
+  }
+
+  .mobile-details .icon-button {
+    flex: 1 1 calc(50% - 6px);
+    font-size: 0.78rem;
+  }
+
+  .chart-preview {
+    width: 100%;
+  }
+
+  .chart-preview svg {
+    min-height: 72px;
+  }
+
+  .sheet-tabs {
+    margin-bottom: 10px;
+  }
+
+  .sheet-tabs button {
+    min-width: 170px;
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .dashboard-section-header {
+    display: grid;
+    gap: 10px;
+  }
+
+  .sheet-pl {
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .results-toolbar {
+    gap: 10px;
+    margin-bottom: 10px;
   }
 }

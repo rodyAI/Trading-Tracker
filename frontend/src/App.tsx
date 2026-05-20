@@ -1098,6 +1098,7 @@ export default function App() {
   const renderTradeCard = (trade: TrackedTrade) => {
     const metrics = tradeMetrics(trade);
     const recommendationFailed = isRecommendationDataError(trade);
+    const hasDataIssue = Boolean(trade.priceError || recommendationFailed);
     const tone = isNearStopOrTarget(trade)
       ? "warning"
       : metrics.profitLoss != null && metrics.profitLoss >= 0
@@ -1109,49 +1110,68 @@ export default function App() {
         <div className="card-heading">
           <div>
             <h3>{trade.symbol}</h3>
-            <p>{numberFormatter.format(trade.quantity)} shares</p>
-            {trade.excludeFromPortfolioTotals && <p className="total-exclusion-note">Excluded from portfolio total P/L</p>}
+            <p>
+              {numberFormatter.format(trade.quantity)} shares
+              {trade.excludeFromPortfolioTotals ? " · Excluded from total" : ""}
+            </p>
           </div>
           <span className={`status-pill ${tone}`}>{metrics.status}</span>
         </div>
-        <div className="metric-grid">
-          <span>
-            Entry<strong>{formatPrice(trade.entryPrice)}</strong>
-          </span>
-          <span>
-            SL<strong>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</strong>
-          </span>
-          <span>
-            TP<strong>{trade.takeProfit == null ? "Not set" : formatPrice(trade.takeProfit)}</strong>
-          </span>
+
+        <div className="mobile-primary-grid">
           <span>
             {trade.isClosed ? "Exit" : "Current"}<strong>{formatPrice(trade.isClosed ? trade.exitPrice : trade.currentPrice)}</strong>
           </span>
           <span>
-            P/L $<strong>{formatCurrency(metrics.profitLoss)}</strong>
+            P/L<strong>{formatCurrency(metrics.profitLoss)}</strong>
           </span>
           <span>
             P/L %<strong>{formatPercent(metrics.profitLossPercent)}</strong>
           </span>
           <span>
-            Risk<strong>{formatCurrency(metrics.riskAmount)}</strong>
-          </span>
-          <span>
-            Reward<strong>{formatCurrency(metrics.rewardAmount)}</strong>
-          </span>
-          <span>
-            R/R<strong>{metrics.riskRewardRatio == null ? "Unavailable" : metrics.riskRewardRatio.toFixed(2)}</strong>
+            Rec Sell<strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
           </span>
         </div>
-        <div className={`recommendation-box ${recommendationFailed ? "failed" : ""}`}>
-          <span>Recommended Sell</span>
-          <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
-          <p>{getRecommendationExplanation(trade)}</p>
-          {renderChartPreview(trade)}
-        </div>
-        {trade.notes && <p className="notes-text">{trade.notes}</p>}
-        {trade.priceError && <p className="field-error">{trade.priceError}</p>}
-        {renderTradeActions(trade)}
+
+        {hasDataIssue && (
+          <details className="mobile-error-details">
+            <summary>Data issue</summary>
+            {trade.priceError && <p className="field-error">{trade.priceError}</p>}
+            {recommendationFailed && <p className="field-error">{getRecommendationExplanation(trade)}</p>}
+          </details>
+        )}
+
+        <details className="mobile-details">
+          <summary>Details</summary>
+          <div className="metric-grid">
+            <span>
+              Entry<strong>{formatPrice(trade.entryPrice)}</strong>
+            </span>
+            <span>
+              SL<strong>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</strong>
+            </span>
+            <span>
+              TP<strong>{trade.takeProfit == null ? "Not set" : formatPrice(trade.takeProfit)}</strong>
+            </span>
+            <span>
+              Risk<strong>{formatCurrency(metrics.riskAmount)}</strong>
+            </span>
+            <span>
+              Reward<strong>{formatCurrency(metrics.rewardAmount)}</strong>
+            </span>
+            <span>
+              R/R<strong>{metrics.riskRewardRatio == null ? "Unavailable" : metrics.riskRewardRatio.toFixed(2)}</strong>
+            </span>
+          </div>
+          <div className={`recommendation-box ${recommendationFailed ? "failed" : ""}`}>
+            <span>Recommended Sell</span>
+            <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
+            {!recommendationFailed && <p>{getRecommendationExplanation(trade)}</p>}
+            {renderChartPreview(trade)}
+          </div>
+          {trade.notes && <p className="notes-text">{trade.notes}</p>}
+          {renderTradeActions(trade)}
+        </details>
       </article>
     );
   };
