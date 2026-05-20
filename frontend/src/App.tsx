@@ -17,12 +17,10 @@ import {
   loadTradePersistenceDiagnostics,
   loadUserTradesFromServer,
   saveUserTrade,
-  subscribeToUserTrades,
 } from "./services/firebaseTradeStore";
 import {
   loadPortfolioSettingsFromServer,
   savePortfolioSettings,
-  subscribeToPortfolioSettings,
 } from "./services/firebasePortfolioSettings";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
@@ -150,25 +148,7 @@ const summarizeTrades = (items: TrackedTrade[]) => {
 const shouldIncludeInPortfolioTotals = (trade: TrackedTrade, excludedCategories: Set<TradeCategory>) =>
   !trade.excludeFromPortfolioTotals && !excludedCategories.has(trade.category ?? "Swing");
 
-const normalizeExcludedCategories = (categories: unknown): TradeCategory[] => {
-  if (!Array.isArray(categories)) return [];
-  return categories.filter((category): category is TradeCategory => TRADE_CATEGORIES.includes(category as TradeCategory));
-};
-
 const portfolioSettingsStorageKey = (user: User) => `${PORTFOLIO_SETTINGS_STORAGE_PREFIX}-${user.uid}`;
-
-const loadCachedExcludedCategories = (user: User) => {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const cached = window.localStorage.getItem(portfolioSettingsStorageKey(user));
-    if (!cached) return [];
-    const parsed = JSON.parse(cached) as { excludedCategories?: unknown };
-    return normalizeExcludedCategories(parsed.excludedCategories);
-  } catch {
-    return [];
-  }
-};
 
 const cacheExcludedCategories = (user: User, excludedCategories: TradeCategory[]) => {
   if (typeof window === "undefined") return;
@@ -267,7 +247,6 @@ export default function App() {
   const initialRefreshUserRef = useRef<string | null>(null);
   const isRefreshingRef = useRef(false);
   const isRecalculatingRecommendationsRef = useRef(false);
-  const portfolioSettingsSaveInFlightRef = useRef(false);
 
   const syncServerState = useCallback(async () => {
     if (!user) return;
@@ -309,63 +288,32 @@ export default function App() {
 
     setIsLoadingTrades(true);
     setGlobalError("");
+    setPersistenceDiagnostics("");
     void syncServerState()
-      .then(() => setStatusMessage("Loaded latest server state."))
+      .then(() => {
+        setIsLoadingTrades(false);
+        setStatusMessage("Loaded latest server state.");
+      })
       .catch((error) => {
+        setIsLoadingTrades(false);
         setGlobalError(error instanceof Error ? error.message : "Failed to load latest server state.");
-      });
-
-    return subscribeToUserTrades(
-      user,
-      (nextTrades) => {
-        setTrades((currentTrades) =>
-          nextTrades.map((trade) =>
-            mergeLocalMarketData(
-              trade,
-              currentTrades.find((currentTrade) => currentTrade.id === trade.id),
-            ),
-          ),
-        );
-        setIsLoadingTrades(false);
-        setStatusMessage(`Loaded ${nextTrades.length} trade${nextTrades.length === 1 ? "" : "s"} from Firestore.`);
-      },
-      (error) => {
-        setGlobalError(error.message);
-        setIsLoadingTrades(false);
         setStatusMessage("Trade load failed.");
-      },
-    );
+      });
+    return undefined;
   }, [syncServerState, user]);
 
   useEffect(() => {
-    if (!user) {
-      setExcludedPortfolioCategories([]);
-      return undefined;
-    }
+    if (!user || typeof window === "undefined") return undefined;
 
-    const cachedCategories = loadCachedExcludedCategories(user);
-    if (cachedCategories.length > 0) {
-      setExcludedPortfolioCategories(cachedCategories);
-    }
+    const syncOnFocus = () => {
+      void syncServerState().catch((error) => {
+        setGlobalError(error instanceof Error ? error.message : "Failed to load latest server state.");
+      });
+    };
 
-    return subscribeToPortfolioSettings(
-      user,
-      (settings) => {
-        if (portfolioSettingsSaveInFlightRef.current) return;
-        if (!settings.exists && cachedCategories.length > 0) {
-          void savePortfolioSettings(user, { excludedCategories: cachedCategories }).catch((error) => {
-            setGlobalError(error instanceof Error ? error.message : "Failed to restore portfolio settings.");
-          });
-          return;
-        }
-        setExcludedPortfolioCategories(settings.excludedCategories);
-        cacheExcludedCategories(user, settings.excludedCategories);
-      },
-      (error) => {
-        setGlobalError(error.message);
-      },
-    );
-  }, [user]);
+    window.addEventListener("focus", syncOnFocus);
+    return () => window.removeEventListener("focus", syncOnFocus);
+  }, [syncServerState, user]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -660,17 +608,14 @@ export default function App() {
       ? excludedPortfolioCategories.filter((item) => item !== category)
       : [...excludedPortfolioCategories, category];
 
-    portfolioSettingsSaveInFlightRef.current = true;
     setExcludedPortfolioCategories(nextCategories);
     cacheExcludedCategories(user, nextCategories);
     try {
       const savedSettings = await savePortfolioSettings(user, { excludedCategories: nextCategories });
-      portfolioSettingsSaveInFlightRef.current = false;
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
       cacheExcludedCategories(user, savedSettings.excludedCategories);
       setStatusMessage(`${category} ${nextCategories.includes(category) ? "excluded from" : "included in"} portfolio total P/L.`);
     } catch (error) {
-      portfolioSettingsSaveInFlightRef.current = false;
       setExcludedPortfolioCategories(excludedPortfolioCategories);
       cacheExcludedCategories(user, excludedPortfolioCategories);
       setGlobalError(error instanceof Error ? error.message : `Failed to update ${category} total P/L setting.`);
