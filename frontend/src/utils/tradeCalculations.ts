@@ -18,6 +18,7 @@ export interface TrackedTrade {
   isClosed?: boolean;
   exitPrice?: number | null;
   exitDate?: string;
+  excludeFromPortfolioTotals?: boolean;
   currentPrice?: number | null;
   currentPriceAsOf?: number | null;
   currentPriceProvider?: string | null;
@@ -38,6 +39,7 @@ export interface TradeFormValues {
   notes: string;
   entryDate: string;
   tags: string;
+  excludeFromPortfolioTotals: boolean;
 }
 
 export interface ValidationResult {
@@ -141,6 +143,7 @@ export const validateTradeForm = (form: TradeFormValues): ValidationResult => {
         .split(",")
         .map((tag) => tag.trim())
         .filter(Boolean),
+      excludeFromPortfolioTotals: form.excludeFromPortfolioTotals,
     },
   };
 };

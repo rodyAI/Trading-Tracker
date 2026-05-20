@@ -23,6 +23,7 @@ const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
   isClosed: trade.isClosed ?? false,
   exitPrice: trade.exitPrice ?? null,
   exitDate: trade.exitDate ?? "",
+  excludeFromPortfolioTotals: trade.excludeFromPortfolioTotals ?? false,
 });
 
 const stripDerivedMarketData = (trade: TrackedTrade): TrackedTrade => ({
@@ -63,6 +64,7 @@ const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade 
     entryPrice: Number(trade.entryPrice),
     exitPrice: trade.exitPrice == null ? null : Number(trade.exitPrice),
     isClosed: Boolean(trade.isClosed),
+    excludeFromPortfolioTotals: Boolean(trade.excludeFromPortfolioTotals),
   };
 };
 

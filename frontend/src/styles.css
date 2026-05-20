@@ -237,6 +237,20 @@ label,
   gap: 8px;
 }
 
+.checkbox-field {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+}
+
+.checkbox-field input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
 input,
 select,
 textarea {
@@ -351,6 +365,12 @@ textarea {
 .sheet-pl span {
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.section-total-toggle {
+  margin-top: 8px;
+  padding: 0;
+  text-align: left;
 }
 
 .sheet-pl {
@@ -482,6 +502,10 @@ td small {
 
 td small.recommendation-error {
   color: #ff9d9a;
+}
+
+.total-exclusion-note {
+  color: var(--warning);
 }
 
 .trade-row.positive {

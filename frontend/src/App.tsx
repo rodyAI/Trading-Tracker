@@ -16,6 +16,7 @@ import {
   saveUserTrade,
   subscribeToUserTrades,
 } from "./services/firebaseTradeStore";
+import { savePortfolioSettings, subscribeToPortfolioSettings } from "./services/firebasePortfolioSettings";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
   TRADE_CATEGORIES,
@@ -50,6 +51,7 @@ const emptyForm: TradeFormValues = {
   notes: "",
   entryDate: "",
   tags: "",
+  excludeFromPortfolioTotals: false,
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -137,6 +139,9 @@ const summarizeTrades = (items: TrackedTrade[]) => {
   };
 };
 
+const shouldIncludeInPortfolioTotals = (trade: TrackedTrade, excludedCategories: Set<TradeCategory>) =>
+  !trade.excludeFromPortfolioTotals && !excludedCategories.has(trade.category ?? "Swing");
+
 const withTimeout = async <T,>(promise: Promise<T>, message: string, timeoutMs = REFRESH_STEP_TIMEOUT_MS) => {
   let timeoutId: number | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -209,6 +214,7 @@ export default function App() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [activeCategory, setActiveCategory] = useState<TradeCategory>("Swing");
   const [importCategory, setImportCategory] = useState<TradeCategory>("Swing");
+  const [excludedPortfolioCategories, setExcludedPortfolioCategories] = useState<TradeCategory[]>([]);
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
@@ -232,6 +238,7 @@ export default function App() {
   useEffect(() => {
     if (!user) {
       setTrades([]);
+      setExcludedPortfolioCategories([]);
       setIsLoadingTrades(false);
       initialRefreshUserRef.current = null;
       setStatusMessage("Sign in to load your trades.");
@@ -259,6 +266,23 @@ export default function App() {
         setGlobalError(error.message);
         setIsLoadingTrades(false);
         setStatusMessage("Trade load failed.");
+      },
+    );
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setExcludedPortfolioCategories([]);
+      return undefined;
+    }
+
+    return subscribeToPortfolioSettings(
+      user,
+      (settings) => {
+        setExcludedPortfolioCategories(settings.excludedCategories);
+      },
+      (error) => {
+        setGlobalError(error.message);
       },
     );
   }, [user]);
@@ -522,6 +546,48 @@ export default function App() {
     }
   };
 
+  const handleToggleTradePortfolioInclusion = async (trade: TrackedTrade) => {
+    if (!user) {
+      setStatusMessage("Sign in before changing total P/L settings.");
+      return;
+    }
+
+    const updatedTrade = {
+      ...trade,
+      excludeFromPortfolioTotals: !trade.excludeFromPortfolioTotals,
+    };
+
+    try {
+      await saveUserTrade(user, updatedTrade);
+      setTrades((currentTrades) => currentTrades.map((currentTrade) => (currentTrade.id === trade.id ? updatedTrade : currentTrade)));
+      setStatusMessage(
+        `${trade.symbol} ${updatedTrade.excludeFromPortfolioTotals ? "excluded from" : "included in"} portfolio total P/L.`,
+      );
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : `Failed to update ${trade.symbol} total P/L setting.`);
+    }
+  };
+
+  const handleToggleCategoryPortfolioInclusion = async (category: TradeCategory) => {
+    if (!user) {
+      setStatusMessage("Sign in before changing total P/L settings.");
+      return;
+    }
+
+    const nextCategories = excludedPortfolioCategories.includes(category)
+      ? excludedPortfolioCategories.filter((item) => item !== category)
+      : [...excludedPortfolioCategories, category];
+
+    setExcludedPortfolioCategories(nextCategories);
+    try {
+      await savePortfolioSettings(user, { excludedCategories: nextCategories });
+      setStatusMessage(`${category} ${nextCategories.includes(category) ? "excluded from" : "included in"} portfolio total P/L.`);
+    } catch (error) {
+      setExcludedPortfolioCategories(excludedPortfolioCategories);
+      setGlobalError(error instanceof Error ? error.message : `Failed to update ${category} total P/L setting.`);
+    }
+  };
+
   useEffect(() => {
     if (!user || isLoadingTrades || trades.length === 0) return;
     if (initialRefreshUserRef.current === user.uid) return;
@@ -540,6 +606,12 @@ export default function App() {
   const handleFormChange = (field: keyof TradeFormValues) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((current) => ({ ...current, [field]: event.target.value }));
     setFormErrors((current) => ({ ...current, [field]: undefined }));
+  };
+
+  const handleFormCheckedChange = (field: keyof Pick<TradeFormValues, "excludeFromPortfolioTotals">) => (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    setForm((current) => ({ ...current, [field]: event.target.checked }));
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -563,6 +635,7 @@ export default function App() {
       currentPrice: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPrice : null,
       currentPriceAsOf: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPriceAsOf : null,
       currentPriceProvider: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPriceProvider : null,
+      excludeFromPortfolioTotals: validation.values.excludeFromPortfolioTotals,
     };
 
     setStatusMessage("Saving trade and calculating the recommended sell price...");
@@ -596,6 +669,7 @@ export default function App() {
       notes: trade.notes ?? "",
       entryDate: trade.entryDate ?? "",
       tags: (trade.tags ?? []).join(", "),
+      excludeFromPortfolioTotals: trade.excludeFromPortfolioTotals ?? false,
     });
     setFormErrors({});
     setActiveCategory(trade.category ?? "Swing");
@@ -672,10 +746,19 @@ export default function App() {
     [tradesByCategory],
   );
   const activeSummary = categorySummaries[activeCategory];
+  const excludedPortfolioCategorySet = useMemo(
+    () => new Set(excludedPortfolioCategories),
+    [excludedPortfolioCategories],
+  );
+  const portfolioTotalTrades = useMemo(
+    () => trades.filter((trade) => shouldIncludeInPortfolioTotals(trade, excludedPortfolioCategorySet)),
+    [excludedPortfolioCategorySet, trades],
+  );
+  const excludedFromPortfolioTotalCount = trades.length - portfolioTotalTrades.length;
 
   const portfolio = useMemo(() => {
-    return summarizeTrades(trades);
-  }, [trades]);
+    return summarizeTrades(portfolioTotalTrades);
+  }, [portfolioTotalTrades]);
 
   const exportCsv = () => {
     const header = [
@@ -699,6 +782,7 @@ export default function App() {
       "Closed",
       "Exit Price",
       "Exit Date",
+      "Exclude From Portfolio Total",
     ];
 
     const rows = trades.map((trade) => {
@@ -724,6 +808,7 @@ export default function App() {
         trade.isClosed ? "yes" : "no",
         trade.exitPrice ?? "",
         trade.exitDate ?? "",
+        trade.excludeFromPortfolioTotals ? "yes" : "no",
       ];
     });
 
@@ -768,6 +853,7 @@ export default function App() {
       const closed = cells[16 + offset]?.toLowerCase() === "yes";
       const exitPrice = closed ? Number(cells[17 + offset]) : null;
       const exitDate = cells[18 + offset] ?? "";
+      const excludeFromPortfolioTotals = cells[19 + offset]?.toLowerCase() === "yes";
       const validation = validateTradeForm({
         ...emptyForm,
         category: targetCategory,
@@ -788,6 +874,7 @@ export default function App() {
             isClosed: closed,
             exitPrice: exitPrice != null && Number.isFinite(exitPrice) ? exitPrice : null,
             exitDate,
+            excludeFromPortfolioTotals,
           }),
         );
       }
@@ -891,6 +978,14 @@ export default function App() {
           Close
         </button>
       )}
+      <button
+        type="button"
+        className="icon-button"
+        onClick={() => void handleToggleTradePortfolioInclusion(trade)}
+        aria-label={`${trade.excludeFromPortfolioTotals ? "Include" : "Exclude"} ${trade.symbol} in portfolio total P/L`}
+      >
+        {trade.excludeFromPortfolioTotals ? "Include Total" : "Exclude Total"}
+      </button>
       <button type="button" className="icon-button danger-button" onClick={() => void handleDelete(trade.id)} aria-label={`Delete ${trade.symbol}`}>
         Delete
       </button>
@@ -912,6 +1007,7 @@ export default function App() {
       <tr key={trade.id} className={`trade-row ${tone}`}>
         <td>
           <strong>{trade.symbol}</strong>
+          {trade.excludeFromPortfolioTotals && <small className="total-exclusion-note">Excluded from portfolio total P/L</small>}
           {trade.tags?.length ? (
             <div className="tag-list">
               {trade.tags.map((tag) => (
@@ -964,6 +1060,7 @@ export default function App() {
           <div>
             <h3>{trade.symbol}</h3>
             <p>{numberFormatter.format(trade.quantity)} shares</p>
+            {trade.excludeFromPortfolioTotals && <p className="total-exclusion-note">Excluded from portfolio total P/L</p>}
           </div>
           <span className={`status-pill ${tone}`}>{metrics.status}</span>
         </div>
@@ -1152,7 +1249,8 @@ export default function App() {
             <span>Tracked trades</span>
             <strong>{isLoadingTrades ? "..." : numberFormatter.format(trades.length)}</strong>
             <small>
-              {portfolio.openCount} open / {portfolio.closedCount} closed. {statusMessage}
+              {portfolio.openCount} open / {portfolio.closedCount} closed included.{" "}
+              {excludedFromPortfolioTotalCount} excluded from total P/L. {statusMessage}
             </small>
           </article>
         </div>
@@ -1211,6 +1309,14 @@ export default function App() {
           <label className="wide-field">
             <span>Notes</span>
             <textarea value={form.notes} onChange={handleFormChange("notes")} rows={3} placeholder="Setup, catalyst, invalidation, earnings notes..." />
+          </label>
+          <label className="checkbox-field wide-field">
+            <input
+              type="checkbox"
+              checked={form.excludeFromPortfolioTotals}
+              onChange={handleFormCheckedChange("excludeFromPortfolioTotals")}
+            />
+            <span>Exclude this stock from portfolio total P/L</span>
           </label>
           <div className="form-actions">
             <button type="submit" className="primary-button">{form.id ? "Save Changes" : "Add Trade"}</button>
@@ -1323,6 +1429,7 @@ export default function App() {
               <small>
                 U {formatCurrency(categorySummaries[category].unrealized)} / R{" "}
                 {formatCurrency(categorySummaries[category].realized)}
+                {excludedPortfolioCategorySet.has(category) ? " / excluded" : ""}
               </small>
             </button>
           ))}
@@ -1336,6 +1443,15 @@ export default function App() {
                 {numberFormatter.format(activeTrades.length)} trades, {activeSummary.openCount} open,{" "}
                 {activeSummary.closedCount} closed
               </span>
+              <button
+                type="button"
+                className="text-button section-total-toggle"
+                onClick={() => void handleToggleCategoryPortfolioInclusion(activeCategory)}
+              >
+                {excludedPortfolioCategorySet.has(activeCategory)
+                  ? "Include this section in portfolio total P/L"
+                  : "Exclude this section from portfolio total P/L"}
+              </button>
             </div>
             <div className={`sheet-pl ${activeSummary.unrealized >= 0 ? "positive" : "negative"}`}>
               <span>Open P/L</span>
