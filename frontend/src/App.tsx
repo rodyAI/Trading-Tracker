@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MarketDataProviderId } from "@shared/types";
+import type { MarketCandle, MarketDataProviderId } from "@shared/types";
 import {
   signInWithEmail,
   signInWithGoogle,
@@ -86,12 +86,13 @@ const createId = () => {
 };
 
 const tradeMetrics = (trade: TrackedTrade) => {
+  const resolvedPrice = trade.isClosed ? trade.exitPrice : trade.currentPrice;
   const profitLoss =
-    trade.currentPrice == null
+    resolvedPrice == null
       ? null
-      : calculateProfitLossDollars(trade.currentPrice, trade.entryPrice, trade.quantity);
+      : calculateProfitLossDollars(resolvedPrice, trade.entryPrice, trade.quantity);
   const profitLossPercent =
-    trade.currentPrice == null ? null : calculateProfitLossPercent(trade.currentPrice, trade.entryPrice);
+    resolvedPrice == null ? null : calculateProfitLossPercent(resolvedPrice, trade.entryPrice);
   const riskAmount = calculateRiskAmount(trade.entryPrice, trade.stopLoss, trade.quantity);
   const rewardAmount = calculateRewardAmount(trade.entryPrice, trade.takeProfit, trade.quantity);
   const riskRewardRatio = calculateRiskRewardRatio(riskAmount, rewardAmount);
@@ -108,16 +109,31 @@ const tradeMetrics = (trade: TrackedTrade) => {
 };
 
 const summarizeTrades = (items: TrackedTrade[]) => {
-  const invested = items.reduce((sum, trade) => sum + trade.entryPrice * trade.quantity, 0);
+  const openTrades = items.filter((trade) => !trade.isClosed);
+  const closedTrades = items.filter((trade) => trade.isClosed);
+  const invested = openTrades.reduce((sum, trade) => sum + trade.entryPrice * trade.quantity, 0);
   const unrealized = items.reduce((sum, trade) => {
-    if (trade.currentPrice == null) return sum;
+    if (trade.isClosed || trade.currentPrice == null) return sum;
     return sum + calculateProfitLossDollars(trade.currentPrice, trade.entryPrice, trade.quantity);
   }, 0);
+  const realizedBasis = closedTrades.reduce((sum, trade) => sum + trade.entryPrice * trade.quantity, 0);
+  const realized = closedTrades.reduce((sum, trade) => {
+    if (trade.exitPrice == null) return sum;
+    return sum + calculateProfitLossDollars(trade.exitPrice, trade.entryPrice, trade.quantity);
+  }, 0);
+  const totalBasis = invested + realizedBasis;
+  const totalProfitLoss = unrealized + realized;
 
   return {
     invested,
     unrealized,
     unrealizedPercent: invested > 0 ? (unrealized / invested) * 100 : null,
+    realized,
+    realizedPercent: realizedBasis > 0 ? (realized / realizedBasis) * 100 : null,
+    totalProfitLoss,
+    totalProfitLossPercent: totalBasis > 0 ? (totalProfitLoss / totalBasis) * 100 : null,
+    openCount: openTrades.length,
+    closedCount: closedTrades.length,
   };
 };
 
@@ -157,8 +173,22 @@ const mergeLocalMarketData = (trade: TrackedTrade, existing: TrackedTrade | unde
     priceError: existing.priceError ?? null,
     recommendedTakeProfit: existing.recommendedTakeProfit ?? null,
     recommendationExplanation: existing.recommendationExplanation ?? "",
+    chartCandles: existing.chartCandles ?? [],
   };
 };
+
+const todayIsoDate = () => new Date().toISOString().slice(0, 10);
+
+const getDefaultExitPrice = (trade: TrackedTrade) =>
+  trade.currentPrice ?? trade.takeProfit ?? trade.recommendedTakeProfit ?? trade.entryPrice;
+
+const parseExitPrice = (value: string | null) => {
+  if (value == null) return null;
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const getChartCandles = (candles: MarketCandle[]) => candles.slice(-80);
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -185,6 +215,7 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculatingRecommendations, setIsRecalculatingRecommendations] = useState(false);
   const [recommendationProgress, setRecommendationProgress] = useState<{ current: number; total: number } | null>(null);
+  const [recalculatingTradeIds, setRecalculatingTradeIds] = useState<Set<string>>(() => new Set());
   const [isLoadingTrades, setIsLoadingTrades] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const initialRefreshUserRef = useRef<string | null>(null);
@@ -254,6 +285,7 @@ export default function App() {
           ...trade,
           recommendedTakeProfit: recommendation.price,
           recommendationExplanation: recommendation.explanation,
+          chartCandles: getChartCandles(response.candles),
         };
       } catch (error) {
         const recommendation = recommendTakeProfit(trade.entryPrice, trade.stopLoss, trade.quantity);
@@ -261,6 +293,7 @@ export default function App() {
           ...trade,
           recommendedTakeProfit: recommendation.price,
           recommendationExplanation: formatRecommendationDataError(trade.symbol, provider, error),
+          chartCandles: [],
         };
       }
     },
@@ -275,7 +308,7 @@ export default function App() {
       return;
     }
 
-    const symbols = [...new Set(trades.map((trade) => trade.symbol).filter(Boolean))];
+    const symbols = [...new Set(trades.filter((trade) => !trade.isClosed).map((trade) => trade.symbol).filter(Boolean))];
     if (symbols.length === 0) {
       setStatusMessage("No trades to refresh yet.");
       return;
@@ -396,6 +429,98 @@ export default function App() {
       setRecommendationProgress(null);
     }
   }, [activeCategory, enrichTradeRecommendation, trades, user]);
+
+  const handleRecalculateTrade = async (trade: TrackedTrade) => {
+    if (trade.isClosed || recalculatingTradeIds.has(trade.id)) return;
+
+    setRecalculatingTradeIds((current) => new Set(current).add(trade.id));
+    setGlobalError("");
+    setStatusMessage(`Recalculating ${trade.symbol} sell recommendation...`);
+
+    try {
+      const updatedTrade = await enrichTradeRecommendation(trade);
+      setTrades((currentTrades) =>
+        currentTrades.map((currentTrade) =>
+          currentTrade.id === trade.id
+            ? {
+                ...currentTrade,
+                recommendedTakeProfit: updatedTrade.recommendedTakeProfit,
+                recommendationExplanation: updatedTrade.recommendationExplanation,
+                chartCandles: updatedTrade.chartCandles ?? [],
+              }
+            : currentTrade,
+        ),
+      );
+      setStatusMessage(`${trade.symbol} recommendation updated locally.`);
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : `Failed to recalculate ${trade.symbol}.`);
+      setStatusMessage(`${trade.symbol} recommendation failed.`);
+    } finally {
+      setRecalculatingTradeIds((current) => {
+        const next = new Set(current);
+        next.delete(trade.id);
+        return next;
+      });
+    }
+  };
+
+  const handleCloseTrade = async (trade: TrackedTrade) => {
+    if (!user) {
+      setStatusMessage("Sign in before closing trades.");
+      return;
+    }
+
+    const defaultExitPrice = getDefaultExitPrice(trade);
+    const input = window.prompt(`Exit price for ${trade.symbol}`, priceFormatter.format(defaultExitPrice).replace(/,/g, ""));
+    const exitPrice = parseExitPrice(input);
+
+    if (input == null) return;
+    if (exitPrice == null) {
+      setGlobalError("Exit price must be greater than 0.");
+      return;
+    }
+
+    const closedTrade: TrackedTrade = {
+      ...trade,
+      isClosed: true,
+      exitPrice,
+      exitDate: todayIsoDate(),
+      currentPrice: null,
+      currentPriceAsOf: null,
+      currentPriceProvider: null,
+      priceError: null,
+    };
+
+    try {
+      await saveUserTrade(user, closedTrade);
+      setTrades((currentTrades) => currentTrades.map((currentTrade) => (currentTrade.id === trade.id ? closedTrade : currentTrade)));
+      setStatusMessage(`${trade.symbol} closed at ${formatPrice(exitPrice)}.`);
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : `Failed to close ${trade.symbol}.`);
+    }
+  };
+
+  const handleReopenTrade = async (trade: TrackedTrade) => {
+    if (!user) {
+      setStatusMessage("Sign in before reopening trades.");
+      return;
+    }
+
+    const reopenedTrade: TrackedTrade = {
+      ...trade,
+      isClosed: false,
+      exitPrice: null,
+      exitDate: "",
+    };
+
+    try {
+      await saveUserTrade(user, reopenedTrade);
+      setTrades((currentTrades) => currentTrades.map((currentTrade) => (currentTrade.id === trade.id ? reopenedTrade : currentTrade)));
+      setStatusMessage(`${trade.symbol} reopened.`);
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : `Failed to reopen ${trade.symbol}.`);
+    }
+  };
 
   useEffect(() => {
     if (!user || isLoadingTrades || trades.length === 0) return;
@@ -571,6 +696,9 @@ export default function App() {
       "Entry Date",
       "Tags",
       "Notes",
+      "Closed",
+      "Exit Price",
+      "Exit Date",
     ];
 
     const rows = trades.map((trade) => {
@@ -593,6 +721,9 @@ export default function App() {
         trade.entryDate ?? "",
         (trade.tags ?? []).join("|"),
         trade.notes ?? "",
+        trade.isClosed ? "yes" : "no",
+        trade.exitPrice ?? "",
+        trade.exitDate ?? "",
       ];
     });
 
@@ -634,6 +765,9 @@ export default function App() {
       const entryDate = cells[13 + offset];
       const tags = cells[14 + offset];
       const notes = cells[15 + offset];
+      const closed = cells[16 + offset]?.toLowerCase() === "yes";
+      const exitPrice = closed ? Number(cells[17 + offset]) : null;
+      const exitDate = cells[18 + offset] ?? "";
       const validation = validateTradeForm({
         ...emptyForm,
         category: targetCategory,
@@ -647,7 +781,15 @@ export default function App() {
         notes: notes ?? "",
       });
       if (validation.values) {
-        importedTrades.push(await enrichTradeRecommendation({ id: createId(), ...validation.values }));
+        importedTrades.push(
+          await enrichTradeRecommendation({
+            id: createId(),
+            ...validation.values,
+            isClosed: closed,
+            exitPrice: exitPrice != null && Number.isFinite(exitPrice) ? exitPrice : null,
+            exitDate,
+          }),
+        );
       }
     }
 
@@ -668,11 +810,87 @@ export default function App() {
     }
   };
 
+  const renderChartPreview = (trade: TrackedTrade) => {
+    const candles = trade.chartCandles?.slice(-60) ?? [];
+    if (candles.length < 2) {
+      return <small className="chart-empty">Chart updates after recommendation recalculation.</small>;
+    }
+
+    const width = 220;
+    const height = 84;
+    const padding = 8;
+    const closePrices = candles.map((candle) => candle.close);
+    const levelPrices = [trade.entryPrice, trade.stopLoss, trade.takeProfit, trade.recommendedTakeProfit, trade.exitPrice].filter(
+      (value): value is number => value != null && Number.isFinite(value),
+    );
+    const rawMin = Math.min(...closePrices, ...levelPrices);
+    const rawMax = Math.max(...closePrices, ...levelPrices);
+    const span = rawMax - rawMin || Math.max(rawMax * 0.02, 1);
+    const min = rawMin - span * 0.12;
+    const max = rawMax + span * 0.12;
+    const xStep = (width - padding * 2) / Math.max(candles.length - 1, 1);
+    const yFor = (price: number) => height - padding - ((price - min) / (max - min)) * (height - padding * 2);
+    const points = candles.map((candle, index) => `${padding + index * xStep},${yFor(candle.close)}`).join(" ");
+    const levels = [
+      { label: "Entry", value: trade.entryPrice, className: "entry" },
+      { label: "SL", value: trade.stopLoss, className: "stop" },
+      { label: "TP", value: trade.takeProfit, className: "target" },
+      { label: "Rec", value: trade.recommendedTakeProfit, className: "recommended" },
+      { label: "Exit", value: trade.exitPrice, className: "exit" },
+    ].filter((level): level is { label: string; value: number; className: string } => level.value != null && Number.isFinite(level.value));
+
+    return (
+      <div className="chart-preview" aria-label={`${trade.symbol} chart preview`}>
+        <svg viewBox={`0 0 ${width} ${height}`} role="img">
+          <polyline className="price-line" points={points} />
+          {levels.map((level) => {
+            const y = yFor(level.value);
+            return (
+              <g key={`${level.label}-${level.value}`} className={`chart-level ${level.className}`}>
+                <line x1={padding} x2={width - padding} y1={y} y2={y} />
+                <text x={width - padding - 2} y={Math.max(10, y - 3)}>
+                  {level.label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+        <div className="chart-legend">
+          <span>Entry</span>
+          {trade.stopLoss != null && <span>SL</span>}
+          {trade.takeProfit != null && <span>TP</span>}
+          {trade.recommendedTakeProfit != null && <span>Rec</span>}
+          {trade.isClosed && trade.exitPrice != null && <span>Exit</span>}
+        </div>
+      </div>
+    );
+  };
+
   const renderTradeActions = (trade: TrackedTrade) => (
     <div className="row-actions">
+      {!trade.isClosed && (
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => void handleRecalculateTrade(trade)}
+          disabled={recalculatingTradeIds.has(trade.id)}
+          aria-label={`Recalculate ${trade.symbol} recommendation`}
+        >
+          {recalculatingTradeIds.has(trade.id) ? "Recalc..." : "Recalc"}
+        </button>
+      )}
       <button type="button" className="icon-button" onClick={() => handleEdit(trade)} aria-label={`Edit ${trade.symbol}`}>
         Edit
       </button>
+      {trade.isClosed ? (
+        <button type="button" className="icon-button" onClick={() => void handleReopenTrade(trade)} aria-label={`Reopen ${trade.symbol}`}>
+          Reopen
+        </button>
+      ) : (
+        <button type="button" className="icon-button" onClick={() => void handleCloseTrade(trade)} aria-label={`Close ${trade.symbol}`}>
+          Close
+        </button>
+      )}
       <button type="button" className="icon-button danger-button" onClick={() => void handleDelete(trade.id)} aria-label={`Delete ${trade.symbol}`}>
         Delete
       </button>
@@ -711,9 +929,11 @@ export default function App() {
           <small className={recommendationFailed ? "recommendation-error" : undefined}>
             {getRecommendationExplanation(trade)}
           </small>
+          {renderChartPreview(trade)}
         </td>
         <td>
-          {formatPrice(trade.currentPrice)}
+          {trade.isClosed ? formatPrice(trade.exitPrice) : formatPrice(trade.currentPrice)}
+          {trade.isClosed && <small>Closed {trade.exitDate || "without date"}</small>}
           {trade.priceError && <small className="field-error">{trade.priceError}</small>}
         </td>
         <td>{formatCurrency(metrics.profitLoss)}</td>
@@ -758,7 +978,7 @@ export default function App() {
             TP<strong>{trade.takeProfit == null ? "Not set" : formatPrice(trade.takeProfit)}</strong>
           </span>
           <span>
-            Current<strong>{formatPrice(trade.currentPrice)}</strong>
+            {trade.isClosed ? "Exit" : "Current"}<strong>{formatPrice(trade.isClosed ? trade.exitPrice : trade.currentPrice)}</strong>
           </span>
           <span>
             P/L $<strong>{formatCurrency(metrics.profitLoss)}</strong>
@@ -780,6 +1000,7 @@ export default function App() {
           <span>Recommended Sell</span>
           <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
           <p>{getRecommendationExplanation(trade)}</p>
+          {renderChartPreview(trade)}
         </div>
         {trade.notes && <p className="notes-text">{trade.notes}</p>}
         {trade.priceError && <p className="field-error">{trade.priceError}</p>}
@@ -922,10 +1143,17 @@ export default function App() {
             <strong>{formatCurrency(portfolio.unrealized)}</strong>
             <small>{formatPercent(portfolio.unrealizedPercent)}</small>
           </article>
+          <article className={`summary-card ${portfolio.realized >= 0 ? "positive" : "negative"}`}>
+            <span>Total realized P/L</span>
+            <strong>{formatCurrency(portfolio.realized)}</strong>
+            <small>{formatPercent(portfolio.realizedPercent)}</small>
+          </article>
           <article className="summary-card">
             <span>Tracked trades</span>
             <strong>{isLoadingTrades ? "..." : numberFormatter.format(trades.length)}</strong>
-            <small>{statusMessage}</small>
+            <small>
+              {portfolio.openCount} open / {portfolio.closedCount} closed. {statusMessage}
+            </small>
           </article>
         </div>
       </section>
@@ -1093,8 +1321,8 @@ export default function App() {
               <span>{category}</span>
               <strong>{numberFormatter.format(tradesByCategory[category].length)}</strong>
               <small>
-                {formatCurrency(categorySummaries[category].unrealized)} /{" "}
-                {formatPercent(categorySummaries[category].unrealizedPercent)}
+                U {formatCurrency(categorySummaries[category].unrealized)} / R{" "}
+                {formatCurrency(categorySummaries[category].realized)}
               </small>
             </button>
           ))}
@@ -1104,12 +1332,20 @@ export default function App() {
           <div className="dashboard-section-header">
             <div>
               <h3>{activeCategory}</h3>
-              <span>{numberFormatter.format(activeTrades.length)} trades</span>
+              <span>
+                {numberFormatter.format(activeTrades.length)} trades, {activeSummary.openCount} open,{" "}
+                {activeSummary.closedCount} closed
+              </span>
             </div>
             <div className={`sheet-pl ${activeSummary.unrealized >= 0 ? "positive" : "negative"}`}>
-              <span>Total P/L</span>
+              <span>Open P/L</span>
               <strong>{formatCurrency(activeSummary.unrealized)}</strong>
               <small>{formatPercent(activeSummary.unrealizedPercent)}</small>
+            </div>
+            <div className={`sheet-pl ${activeSummary.realized >= 0 ? "positive" : "negative"}`}>
+              <span>Realized P/L</span>
+              <strong>{formatCurrency(activeSummary.realized)}</strong>
+              <small>{formatPercent(activeSummary.realizedPercent)}</small>
             </div>
           </div>
 

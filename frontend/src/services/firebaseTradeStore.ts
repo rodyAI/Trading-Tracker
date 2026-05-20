@@ -20,6 +20,9 @@ const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
   stopLoss: trade.stopLoss ?? null,
   takeProfit: trade.takeProfit ?? null,
   tags: trade.tags ?? [],
+  isClosed: trade.isClosed ?? false,
+  exitPrice: trade.exitPrice ?? null,
+  exitDate: trade.exitDate ?? "",
 });
 
 const stripDerivedMarketData = (trade: TrackedTrade): TrackedTrade => ({
@@ -30,6 +33,7 @@ const stripDerivedMarketData = (trade: TrackedTrade): TrackedTrade => ({
   priceError: null,
   recommendedTakeProfit: null,
   recommendationExplanation: "",
+  chartCandles: [],
 });
 
 const derivedMarketDataFields = [
@@ -39,6 +43,7 @@ const derivedMarketDataFields = [
   "priceError",
   "recommendedTakeProfit",
   "recommendationExplanation",
+  "chartCandles",
 ] as const;
 
 const tradesCollection = (user: User) => collection(requireDb(), "users", user.uid, "trades");
@@ -56,6 +61,8 @@ const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade 
     ...trade,
     quantity: Number(trade.quantity),
     entryPrice: Number(trade.entryPrice),
+    exitPrice: trade.exitPrice == null ? null : Number(trade.exitPrice),
+    isClosed: Boolean(trade.isClosed),
   };
 };
 
@@ -67,6 +74,7 @@ const toFirestore = (trade: TrackedTrade) => {
     priceError,
     recommendedTakeProfit,
     recommendationExplanation,
+    chartCandles,
     ...persistentTrade
   } = normalizeTrade(trade);
   return {
@@ -82,6 +90,7 @@ const derivedMarketDataDeletes = () => ({
   priceError: deleteField(),
   recommendedTakeProfit: deleteField(),
   recommendationExplanation: deleteField(),
+  chartCandles: deleteField(),
 });
 
 const hasDerivedMarketData = (data: Record<string, unknown>) =>

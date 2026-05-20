@@ -113,7 +113,8 @@ button:disabled {
 .summary-card span,
 label span,
 .sort-controls span,
-.recommendation-box span {
+.recommendation-box span,
+.chart-legend span {
   color: var(--muted);
   font-size: 0.82rem;
 }
@@ -612,6 +613,95 @@ td small.recommendation-error {
   margin: 0;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.chart-preview {
+  display: grid;
+  gap: 6px;
+  width: min(220px, 100%);
+  margin-top: 9px;
+}
+
+.chart-preview svg {
+  width: 100%;
+  height: auto;
+  min-height: 84px;
+  overflow: visible;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.price-line {
+  fill: none;
+  stroke: var(--accent-strong);
+  stroke-width: 2.4;
+}
+
+.chart-level line {
+  stroke-width: 1.2;
+  stroke-dasharray: 4 4;
+}
+
+.chart-level text {
+  font-size: 9px;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: #071016;
+  stroke-width: 3px;
+}
+
+.chart-level.entry line {
+  stroke: #ffffff;
+}
+
+.chart-level.entry text {
+  fill: #ffffff;
+}
+
+.chart-level.stop line {
+  stroke: var(--negative);
+}
+
+.chart-level.stop text {
+  fill: var(--negative);
+}
+
+.chart-level.target line,
+.chart-level.recommended line {
+  stroke: var(--positive);
+}
+
+.chart-level.target text,
+.chart-level.recommended text {
+  fill: var(--positive);
+}
+
+.chart-level.exit line {
+  stroke: var(--warning);
+}
+
+.chart-level.exit text {
+  fill: var(--warning);
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chart-legend span,
+.chart-empty {
+  font-size: 0.72rem;
+}
+
+.chart-empty {
+  display: block;
+  max-width: 220px;
+  margin-top: 8px;
+  color: var(--muted);
+  white-space: normal;
 }
 
 @media (max-width: 1080px) {

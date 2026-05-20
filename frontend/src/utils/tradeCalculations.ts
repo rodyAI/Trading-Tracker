@@ -1,6 +1,6 @@
 import type { MarketCandle } from "@shared/types";
 
-export type TradeStatus = "Open" | "Stop loss hit" | "Take profit hit" | "In profit" | "In loss";
+export type TradeStatus = "Open" | "Closed" | "Stop loss hit" | "Take profit hit" | "In profit" | "In loss";
 export const TRADE_CATEGORIES = ["Swing", "Long trades", "Value investing", "Magic formula"] as const;
 export type TradeCategory = (typeof TRADE_CATEGORIES)[number];
 
@@ -15,12 +15,16 @@ export interface TrackedTrade {
   notes?: string;
   entryDate?: string;
   tags?: string[];
+  isClosed?: boolean;
+  exitPrice?: number | null;
+  exitDate?: string;
   currentPrice?: number | null;
   currentPriceAsOf?: number | null;
   currentPriceProvider?: string | null;
   priceError?: string | null;
   recommendedTakeProfit?: number | null;
   recommendationExplanation?: string;
+  chartCandles?: MarketCandle[];
 }
 
 export interface TradeFormValues {
@@ -73,7 +77,10 @@ export const calculateRiskRewardRatio = (riskAmount: number | null, rewardAmount
   return rewardAmount / riskAmount;
 };
 
-export const getTradeStatus = (trade: Pick<TrackedTrade, "entryPrice" | "stopLoss" | "takeProfit" | "currentPrice">) => {
+export const getTradeStatus = (
+  trade: Pick<TrackedTrade, "entryPrice" | "stopLoss" | "takeProfit" | "currentPrice" | "isClosed">,
+) => {
+  if (trade.isClosed) return "Closed" satisfies TradeStatus;
   if (trade.currentPrice == null) return "Open" satisfies TradeStatus;
   if (trade.stopLoss != null && trade.currentPrice <= trade.stopLoss) return "Stop loss hit" satisfies TradeStatus;
   if (trade.takeProfit != null && trade.currentPrice >= trade.takeProfit) return "Take profit hit" satisfies TradeStatus;
