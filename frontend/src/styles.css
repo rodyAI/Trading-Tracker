@@ -599,6 +599,28 @@ td small.recommendation-error {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.footer-debug-button {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent-strong);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.persistence-diagnostics {
+  max-width: 980px;
+  margin: 10px auto 0;
+  padding: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
 .trade-card {
   display: grid;
   gap: 16px;

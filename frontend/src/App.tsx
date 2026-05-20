@@ -14,10 +14,15 @@ import {
 import {
   deleteUserTrade,
   importUserTrades,
+  loadTradePersistenceDiagnostics,
   saveUserTrade,
   subscribeToUserTrades,
 } from "./services/firebaseTradeStore";
-import { savePortfolioSettings, subscribeToPortfolioSettings } from "./services/firebasePortfolioSettings";
+import {
+  loadPortfolioSettingsFromServer,
+  savePortfolioSettings,
+  subscribeToPortfolioSettings,
+} from "./services/firebasePortfolioSettings";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
   TRADE_CATEGORIES,
@@ -248,6 +253,7 @@ export default function App() {
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
+  const [persistenceDiagnostics, setPersistenceDiagnostics] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculatingRecommendations, setIsRecalculatingRecommendations] = useState(false);
   const [recommendationProgress, setRecommendationProgress] = useState<{ current: number; total: number } | null>(null);
@@ -740,9 +746,57 @@ export default function App() {
       await deleteUserTrade(user, trade);
       setTrades((currentTrades) => currentTrades.filter((currentTrade) => currentTrade.id !== trade.id));
       if (form.id === trade.id) setForm(emptyForm);
-      setStatusMessage("Trade deleted from Firestore.");
+      setStatusMessage(`${trade.symbol} delete confirmed by Firestore.`);
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Failed to delete trade.");
+    }
+  };
+
+  const handlePersistenceCheck = async () => {
+    if (!user) {
+      setStatusMessage("Sign in before checking server data.");
+      return;
+    }
+
+    setGlobalError("");
+    setStatusMessage("Checking Firestore server data...");
+
+    try {
+      const [tradeDiagnostics, portfolioSettings] = await Promise.all([
+        loadTradePersistenceDiagnostics(user),
+        loadPortfolioSettingsFromServer(user),
+      ]);
+      const rawTradeText =
+        tradeDiagnostics.rawTrades.length === 0
+          ? "none"
+          : tradeDiagnostics.rawTrades
+              .map(
+                (trade) =>
+                  `${trade.symbol}:${trade.id}${trade.isDeleted ? ":isDeleted" : ""}${
+                    trade.hasDeletedMarker ? ":deletedMarker" : ""
+                  }`,
+              )
+              .join(", ");
+      const deletedMarkerText =
+        tradeDiagnostics.deletedTradeIds.length === 0 ? "none" : tradeDiagnostics.deletedTradeIds.join(", ");
+      const visibleTradeText =
+        tradeDiagnostics.visibleTradeIds.length === 0 ? "none" : tradeDiagnostics.visibleTradeIds.join(", ");
+      const excludedCategoryText =
+        portfolioSettings.excludedCategories.length === 0 ? "none" : portfolioSettings.excludedCategories.join(", ");
+
+      setPersistenceDiagnostics(
+        [
+          `UID: ${tradeDiagnostics.uid}`,
+          `Raw trades: ${rawTradeText}`,
+          `Deleted markers: ${deletedMarkerText}`,
+          `Visible trade ids: ${visibleTradeText}`,
+          `Server excluded tabs: ${excludedCategoryText}`,
+        ].join("\n"),
+      );
+      setStatusMessage("Server data check complete.");
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : "Failed to check Firestore server data.");
+      setStatusMessage("Server data check failed.");
     }
   };
 
@@ -1589,7 +1643,15 @@ export default function App() {
         <span>Firestore build {buildInfo.builds.firestore}</span>
         <span>Cloudflare build {buildInfo.builds.cloudflare}</span>
         <span>Ext build {buildInfo.builds.ext}</span>
+        <button type="button" className="footer-debug-button" onClick={() => void handlePersistenceCheck()}>
+          Check server data
+        </button>
       </footer>
+      {persistenceDiagnostics && (
+        <pre className="persistence-diagnostics" aria-label="Firestore server diagnostics">
+          {persistenceDiagnostics}
+        </pre>
+      )}
     </main>
   );
 }

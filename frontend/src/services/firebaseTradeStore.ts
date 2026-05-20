@@ -4,6 +4,7 @@ import {
   doc,
   getDocFromServer,
   getDocs,
+  getDocsFromServer,
   onSnapshot,
   serverTimestamp,
   setDoc,
@@ -103,6 +104,45 @@ const derivedMarketDataDeletes = () => ({
 
 const hasDerivedMarketData = (data: Record<string, unknown>) =>
   derivedMarketDataFields.some((field) => Object.prototype.hasOwnProperty.call(data, field));
+
+export interface TradePersistenceDiagnostics {
+  uid: string;
+  rawTrades: Array<{
+    id: string;
+    symbol: string;
+    isDeleted: boolean;
+    hasDeletedMarker: boolean;
+  }>;
+  deletedTradeIds: string[];
+  visibleTradeIds: string[];
+}
+
+export const loadTradePersistenceDiagnostics = async (user: User): Promise<TradePersistenceDiagnostics> => {
+  const [tradeSnapshot, deletedSnapshot] = await Promise.all([
+    getDocsFromServer(tradesCollection(user)),
+    getDocsFromServer(deletedTradesCollection(user)),
+  ]);
+  const deletedTradeIds = new Set(deletedSnapshot.docs.map((item) => item.id));
+  const rawTrades = tradeSnapshot.docs.map((item) => {
+    const data = item.data();
+    return {
+      id: item.id,
+      symbol: typeof data.symbol === "string" ? data.symbol : "(no symbol)",
+      isDeleted: data.isDeleted === true,
+      hasDeletedMarker: deletedTradeIds.has(item.id),
+    };
+  });
+
+  return {
+    uid: user.uid,
+    rawTrades,
+    deletedTradeIds: [...deletedTradeIds].sort(),
+    visibleTradeIds: rawTrades
+      .filter((trade) => !trade.isDeleted && !trade.hasDeletedMarker)
+      .map((trade) => trade.id)
+      .sort(),
+  };
+};
 
 export const subscribeToUserTrades = (
   user: User,

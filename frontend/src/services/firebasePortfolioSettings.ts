@@ -62,3 +62,8 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
   }
   return { ...savedSettings, exists: true };
 };
+
+export const loadPortfolioSettingsFromServer = async (user: User) => {
+  const snapshot = await getDocFromServer(settingsDoc(user));
+  return snapshot.exists() ? { ...normalizeSettings(snapshot.data()), exists: true } : defaultSettings;
+};
