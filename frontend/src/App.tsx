@@ -756,6 +756,8 @@ export default function App() {
               .join(", ");
       const deletedMarkerText =
         tradeDiagnostics.deletedTradeIds.length === 0 ? "none" : tradeDiagnostics.deletedTradeIds.join(", ");
+      const deletedSymbolText =
+        tradeDiagnostics.deletedSymbols.length === 0 ? "none" : tradeDiagnostics.deletedSymbols.join(", ");
       const visibleTradeText =
         tradeDiagnostics.visibleTradeIds.length === 0 ? "none" : tradeDiagnostics.visibleTradeIds.join(", ");
       const excludedCategoryText =
@@ -766,6 +768,7 @@ export default function App() {
           `UID: ${tradeDiagnostics.uid}`,
           `Raw trades: ${rawTradeText}`,
           `Deleted markers: ${deletedMarkerText}`,
+          `Deleted symbols: ${deletedSymbolText}`,
           `Visible trade ids: ${visibleTradeText}`,
           `Server excluded tabs: ${excludedCategoryText}`,
         ].join("\n"),

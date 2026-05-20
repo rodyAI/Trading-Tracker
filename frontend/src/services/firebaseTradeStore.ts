@@ -55,6 +55,8 @@ const tradesCollection = (user: User) => collection(requireDb(), "users", user.u
 const tradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "trades", id);
 const deletedTradesCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedTrades");
 const deletedTradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "deletedTrades", id);
+const deletedSymbolsCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedSymbols");
+const deletedSymbolDoc = (user: User, symbol: string) => doc(requireDb(), "users", user.uid, "deletedSymbols", symbol);
 
 const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade => {
   const trade = stripDerivedMarketData(
@@ -114,22 +116,26 @@ export interface TradePersistenceDiagnostics {
     hasDeletedMarker: boolean;
   }>;
   deletedTradeIds: string[];
+  deletedSymbols: string[];
   visibleTradeIds: string[];
 }
 
 export const loadTradePersistenceDiagnostics = async (user: User): Promise<TradePersistenceDiagnostics> => {
-  const [tradeSnapshot, deletedSnapshot] = await Promise.all([
+  const [tradeSnapshot, deletedSnapshot, deletedSymbolSnapshot] = await Promise.all([
     getDocsFromServer(tradesCollection(user)),
     getDocsFromServer(deletedTradesCollection(user)),
+    getDocsFromServer(deletedSymbolsCollection(user)),
   ]);
   const deletedTradeIds = new Set(deletedSnapshot.docs.map((item) => item.id));
+  const deletedSymbols = new Set(deletedSymbolSnapshot.docs.map((item) => item.id.toUpperCase()));
   const rawTrades = tradeSnapshot.docs.map((item) => {
     const data = item.data();
+    const symbol = typeof data.symbol === "string" ? data.symbol : "(no symbol)";
     return {
       id: item.id,
-      symbol: typeof data.symbol === "string" ? data.symbol : "(no symbol)",
+      symbol,
       isDeleted: data.isDeleted === true,
-      hasDeletedMarker: deletedTradeIds.has(item.id),
+      hasDeletedMarker: deletedTradeIds.has(item.id) || deletedSymbols.has(symbol.toUpperCase()),
     };
   });
 
@@ -137,6 +143,7 @@ export const loadTradePersistenceDiagnostics = async (user: User): Promise<Trade
     uid: user.uid,
     rawTrades,
     deletedTradeIds: [...deletedTradeIds].sort(),
+    deletedSymbols: [...deletedSymbols].sort(),
     visibleTradeIds: rawTrades
       .filter((trade) => !trade.isDeleted && !trade.hasDeletedMarker)
       .map((trade) => trade.id)
@@ -145,14 +152,20 @@ export const loadTradePersistenceDiagnostics = async (user: User): Promise<Trade
 };
 
 export const loadUserTradesFromServer = async (user: User) => {
-  const [tradeSnapshot, deletedSnapshot] = await Promise.all([
+  const [tradeSnapshot, deletedSnapshot, deletedSymbolSnapshot] = await Promise.all([
     getDocsFromServer(tradesCollection(user)),
     getDocsFromServer(deletedTradesCollection(user)),
+    getDocsFromServer(deletedSymbolsCollection(user)),
   ]);
   const deletedTradeIds = new Set(deletedSnapshot.docs.map((item) => item.id));
+  const deletedSymbols = new Set(deletedSymbolSnapshot.docs.map((item) => item.id.toUpperCase()));
 
   return tradeSnapshot.docs
-    .filter((item) => item.data().isDeleted !== true && !deletedTradeIds.has(item.id))
+    .filter((item) => {
+      const data = item.data();
+      const symbol = typeof data.symbol === "string" ? data.symbol.toUpperCase() : "";
+      return data.isDeleted !== true && !deletedTradeIds.has(item.id) && !deletedSymbols.has(symbol);
+    })
     .map((item) => fromFirestore(item.id, item.data()))
     .sort((left, right) => left.symbol.localeCompare(right.symbol));
 };
@@ -223,32 +236,50 @@ export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
 
 export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
   const db = requireDb();
-  const ref = tradeDoc(user, trade.id);
-  const deletedRef = deletedTradeDoc(user, trade.id);
+  const symbol = trade.symbol.trim().toUpperCase();
+  const matchingTradeDocs = (await getDocsFromServer(tradesCollection(user))).docs.filter(
+    (item) => String(item.data().symbol ?? "").trim().toUpperCase() === symbol,
+  );
   const batch = writeBatch(db);
 
-  batch.set(deletedRef, {
-    id: trade.id,
-    symbol: trade.symbol,
+  batch.set(deletedSymbolDoc(user, symbol), {
+    symbol,
     deletedAt: serverTimestamp(),
   });
-  batch.set(ref, {
-    ...toFirestore({
-      ...trade,
-      isDeleted: true,
-    }),
-    isDeleted: true,
-    deletedAt: serverTimestamp(),
-  });
+
+  for (const item of matchingTradeDocs) {
+    batch.set(deletedTradeDoc(user, item.id), {
+      id: item.id,
+      symbol,
+      deletedAt: serverTimestamp(),
+    });
+    batch.set(
+      item.ref,
+      {
+        ...toFirestore({
+          ...fromFirestore(item.id, item.data()),
+          isDeleted: true,
+        }),
+        isDeleted: true,
+        deletedAt: serverTimestamp(),
+      },
+    );
+  }
 
   await batch.commit();
   await waitForPendingWrites(db);
 
-  const [tradeSnapshot, deletedSnapshot] = await Promise.all([
-    getDocFromServer(ref),
-    getDocFromServer(deletedRef),
+  const [symbolSnapshot, refreshedTrades] = await Promise.all([
+    getDocFromServer(deletedSymbolDoc(user, symbol)),
+    getDocsFromServer(tradesCollection(user)),
   ]);
-  if (!tradeSnapshot.exists() || tradeSnapshot.data().isDeleted !== true || !deletedSnapshot.exists()) {
+
+  const stillVisible = refreshedTrades.docs.some((item) => {
+    const data = item.data();
+    return String(data.symbol ?? "").trim().toUpperCase() === symbol && data.isDeleted !== true;
+  });
+
+  if (!symbolSnapshot.exists() || stillVisible) {
     throw new Error("Firestore did not confirm the delete marker. Please try again.");
   }
 };
