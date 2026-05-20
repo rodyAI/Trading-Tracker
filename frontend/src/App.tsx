@@ -140,6 +140,7 @@ export default function App() {
   const [isLoadingTrades, setIsLoadingTrades] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const initialRefreshUserRef = useRef<string | null>(null);
+  const isRefreshingRef = useRef(false);
 
   useEffect(() => {
     return subscribeToAuth((nextUser) => {
@@ -211,6 +212,8 @@ export default function App() {
   );
 
   const refreshPrices = useCallback(async () => {
+    if (isRefreshingRef.current) return;
+
     if (!user) {
       setStatusMessage("Sign in to refresh prices.");
       return;
@@ -222,6 +225,7 @@ export default function App() {
       return;
     }
 
+    isRefreshingRef.current = true;
     setIsRefreshing(true);
     setGlobalError("");
 
@@ -254,6 +258,7 @@ export default function App() {
       setGlobalError(error instanceof Error ? error.message : "Unable to refresh current prices.");
       setStatusMessage("Price refresh failed.");
     } finally {
+      isRefreshingRef.current = false;
       setIsRefreshing(false);
     }
   }, [provider, trades, user]);

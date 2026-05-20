@@ -59,6 +59,7 @@ interface BiQuoteResponse {
 const normalizeSymbol = (symbol: string) => symbol.trim().toUpperCase();
 const workerApiBase = import.meta.env.VITE_MARKET_API_BASE_URL?.replace(/\/$/, "") ?? "";
 const WORKER_QUOTE_BATCH_SIZE = 8;
+const MARKET_DATA_TIMEOUT_MS = 20_000;
 
 const fromUnixSeconds = (seconds: number | undefined) =>
   typeof seconds === "number" && Number.isFinite(seconds) ? seconds * 1000 : Date.now();
@@ -68,8 +69,27 @@ const parseNumber = (value: string | number | null | undefined) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}) => {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), MARKET_DATA_TIMEOUT_MS);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Market data request timed out after ${Math.round(MARKET_DATA_TIMEOUT_MS / 1000)} seconds.`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+};
+
 const fetchJson = async <T>(url: string) => {
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       Accept: "application/json",
     },
@@ -113,7 +133,7 @@ const fetchWorkerQuotes = async (symbols: string[], provider?: MarketDataProvide
   const url = new URL(`${workerApiBase}/api/market/quotes`);
   if (provider) url.searchParams.set("provider", provider);
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ symbols }),
@@ -137,7 +157,7 @@ const fetchWorkerCandles = async (symbol: string, provider?: MarketDataProviderI
   const url = new URL(`${workerApiBase}/api/market/candles/${encodeURIComponent(symbol)}`);
   if (provider) url.searchParams.set("provider", provider);
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
     throw new Error(await getErrorMessage(response, `Failed to fetch daily candles for ${symbol} from market-data Worker.`));
   }
@@ -226,7 +246,7 @@ const getBiQuoteFallback = async (symbolInput: string): Promise<MarketQuote> => 
 
 const getStockAnalysisFallback = async (symbolInput: string): Promise<MarketQuote> => {
   const symbol = normalizeSymbol(symbolInput);
-  const response = await fetch(getProxiedUrl(`https://stockanalysis.com/stocks/${symbol.toLowerCase()}/`), {
+  const response = await fetchWithTimeout(getProxiedUrl(`https://stockanalysis.com/stocks/${symbol.toLowerCase()}/`), {
     headers: {
       Accept: "text/html",
     },
