@@ -315,6 +315,12 @@ export default function App() {
       user,
       (settings) => {
         if (portfolioSettingsSaveInFlightRef.current) return;
+        if (!settings.exists && cachedCategories.length > 0) {
+          void savePortfolioSettings(user, { excludedCategories: cachedCategories }).catch((error) => {
+            setGlobalError(error instanceof Error ? error.message : "Failed to restore portfolio settings.");
+          });
+          return;
+        }
         setExcludedPortfolioCategories(settings.excludedCategories);
         cacheExcludedCategories(user, settings.excludedCategories);
       },
@@ -619,8 +625,10 @@ export default function App() {
     setExcludedPortfolioCategories(nextCategories);
     cacheExcludedCategories(user, nextCategories);
     try {
-      await savePortfolioSettings(user, { excludedCategories: nextCategories });
+      const savedSettings = await savePortfolioSettings(user, { excludedCategories: nextCategories });
       portfolioSettingsSaveInFlightRef.current = false;
+      setExcludedPortfolioCategories(savedSettings.excludedCategories);
+      cacheExcludedCategories(user, savedSettings.excludedCategories);
       setStatusMessage(`${category} ${nextCategories.includes(category) ? "excluded from" : "included in"} portfolio total P/L.`);
     } catch (error) {
       portfolioSettingsSaveInFlightRef.current = false;
@@ -1469,10 +1477,8 @@ export default function App() {
               <span>{category}</span>
               <strong>{numberFormatter.format(tradesByCategory[category].length)}</strong>
               <small>
-                Open {formatCurrency(categorySummaries[category].unrealized)} (
-                {formatPercent(categorySummaries[category].unrealizedPercent)}) · Realized{" "}
-                {formatCurrency(categorySummaries[category].realized)} (
-                {formatPercent(categorySummaries[category].realizedPercent)})
+                {formatCurrency(categorySummaries[category].totalProfitLoss)} /{" "}
+                {formatPercent(categorySummaries[category].totalProfitLossPercent)}
                 {excludedPortfolioCategorySet.has(category) ? " · excluded" : ""}
               </small>
             </button>

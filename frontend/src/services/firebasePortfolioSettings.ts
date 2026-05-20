@@ -1,13 +1,15 @@
-import { doc, onSnapshot, serverTimestamp, setDoc, type Unsubscribe } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, type Unsubscribe } from "firebase/firestore";
 import { requireDb, type User } from "../firebase/client";
 import { TRADE_CATEGORIES, type TradeCategory } from "../utils/tradeCalculations";
 
 export interface PortfolioSettings {
   excludedCategories: TradeCategory[];
+  exists?: boolean;
 }
 
 const defaultSettings: PortfolioSettings = {
   excludedCategories: [],
+  exists: false,
 };
 
 const settingsDoc = (user: User) => doc(requireDb(), "users", user.uid, "settings", "portfolioTotals");
@@ -29,13 +31,13 @@ export const subscribeToPortfolioSettings = (
   onSnapshot(
     settingsDoc(user),
     (snapshot) => {
-      onNext(snapshot.exists() ? normalizeSettings(snapshot.data()) : defaultSettings);
+      onNext(snapshot.exists() ? { ...normalizeSettings(snapshot.data()), exists: true } : defaultSettings);
     },
     onError,
   );
 
-export const savePortfolioSettings = (user: User, settings: PortfolioSettings) =>
-  setDoc(
+export const savePortfolioSettings = async (user: User, settings: PortfolioSettings) => {
+  await setDoc(
     settingsDoc(user),
     {
       excludedCategories: settings.excludedCategories,
@@ -43,3 +45,8 @@ export const savePortfolioSettings = (user: User, settings: PortfolioSettings) =
     },
     { merge: true },
   );
+
+  const snapshot = await getDoc(settingsDoc(user));
+  if (!snapshot.exists()) throw new Error("Portfolio settings were not found after saving.");
+  return { ...normalizeSettings(snapshot.data()), exists: true };
+};
