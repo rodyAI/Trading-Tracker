@@ -10,7 +10,7 @@ import {
   subscribeToAuth,
   type User,
 } from "./firebase/client";
-import { deleteUserTrade, importUserTrades, replaceUserTrades, saveUserTrade, subscribeToUserTrades } from "./services/firebaseTradeStore";
+import { deleteUserTrade, importUserTrades, saveUserTrade, subscribeToUserTrades } from "./services/firebaseTradeStore";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
   TRADE_CATEGORIES,
@@ -254,7 +254,15 @@ export default function App() {
       const nextTrades = trades.map((trade) => {
         const quote = quoteBySymbol.get(trade.symbol.toUpperCase());
         const priceError = errorBySymbol.get(trade.symbol.toUpperCase()) ?? null;
-        if (!quote) return { ...trade, priceError };
+        if (!quote) {
+          return {
+            ...trade,
+            currentPrice: null,
+            currentPriceAsOf: null,
+            currentPriceProvider: null,
+            priceError: priceError ?? "Current price could not be fetched.",
+          };
+        }
         return {
           ...trade,
           currentPrice: quote.price,
@@ -270,15 +278,6 @@ export default function App() {
         `Refreshed ${response.quotes.length} quote${response.quotes.length === 1 ? "" : "s"} from ${response.provider}.`,
       );
       setGlobalError(failures ? `${failures} symbol${failures === 1 ? "" : "s"} could not be refreshed.` : "");
-
-      try {
-        await withTimeout(
-          replaceUserTrades(user, nextTrades),
-          "Prices refreshed, but saving them to Firestore timed out. They may update again on the next refresh.",
-        );
-      } catch (saveError) {
-        setGlobalError(saveError instanceof Error ? saveError.message : "Prices refreshed, but saving them failed.");
-      }
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Unable to refresh current prices.");
       setStatusMessage("Price refresh failed.");
