@@ -40,6 +40,7 @@ type SortDirection = "asc" | "desc";
 const PROVIDER_STORAGE_KEY = "swing-trading-tracker-provider";
 const PORTFOLIO_SETTINGS_STORAGE_PREFIX = "swing-trading-tracker-portfolio-settings";
 const REFRESH_STEP_TIMEOUT_MS = 30_000;
+const APP_BUILD_ID = "delete-ledger-2026-05-20-2";
 const formatTimeoutSeconds = (timeoutMs = REFRESH_STEP_TIMEOUT_MS) => Math.round(timeoutMs / 1000);
 
 const emptyForm: TradeFormValues = {
@@ -1302,6 +1303,7 @@ export default function App() {
           </p>
           <div className="account-bar">
             <span>{user.email ?? "Signed in"}</span>
+            <code className="build-stamp">Build {APP_BUILD_ID}</code>
             <button type="button" className="secondary-button" onClick={() => void signOutCurrentUser()}>
               Sign Out
             </button>
