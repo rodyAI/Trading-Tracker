@@ -2,12 +2,104 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedInOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function tradeCategories() {
+      return ["Swing", "Long trades", "Value investing", "Magic formula"];
+    }
+
+    function tradeFields() {
+      return [
+        "id",
+        "category",
+        "symbol",
+        "quantity",
+        "entryPrice",
+        "stopLoss",
+        "takeProfit",
+        "notes",
+        "entryDate",
+        "tags",
+        "isClosed",
+        "exitPrice",
+        "exitDate",
+        "excludeFromPortfolioTotals",
+        "createdAt",
+        "updatedAt"
+      ];
+    }
+
+    function optionalPositiveNumber(data, field) {
+      return !(field in data) || data[field] == null || (data[field] is number && data[field] > 0);
+    }
+
+    function optionalString(data, field, maxLength) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLength);
+    }
+
+    function optionalDateString(data, field) {
+      return !(field in data) || (data[field] is string && data[field].matches("^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$"));
+    }
+
+    function optionalBoolean(data, field) {
+      return !(field in data) || data[field] is bool;
+    }
+
+    function optionalTimestamp(data, field) {
+      return !(field in data) || data[field] is timestamp;
+    }
+
+    function validTradeShape(tradeId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly(tradeFields())
+        && data.keys().hasAll(["id", "symbol", "quantity", "entryPrice"])
+        && data.id == tradeId
+        && data.id is string
+        && data.id.size() > 0
+        && data.id.size() <= 128
+        && data.symbol is string
+        && data.symbol.size() > 0
+        && data.symbol.size() <= 20
+        && data.quantity is number
+        && data.quantity > 0
+        && data.entryPrice is number
+        && data.entryPrice > 0
+        && (!("category" in data) || data.category in tradeCategories())
+        && optionalPositiveNumber(data, "stopLoss")
+        && optionalPositiveNumber(data, "takeProfit")
+        && (!("stopLoss" in data) || data.stopLoss == null || data.stopLoss < data.entryPrice)
+        && (!("takeProfit" in data) || data.takeProfit == null || data.takeProfit > data.entryPrice)
+        && optionalString(data, "notes", 2000)
+        && optionalDateString(data, "entryDate")
+        && (!("tags" in data) || (data.tags is list && data.tags.size() <= 25))
+        && optionalBoolean(data, "isClosed")
+        && optionalPositiveNumber(data, "exitPrice")
+        && optionalDateString(data, "exitDate")
+        && optionalBoolean(data, "excludeFromPortfolioTotals")
+        && optionalTimestamp(data, "createdAt")
+        && optionalTimestamp(data, "updatedAt");
+    }
+
+    function validPortfolioSettingsShape() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(["excludedCategories", "updatedAt"])
+        && data.keys().hasAll(["excludedCategories"])
+        && data.excludedCategories is list
+        && data.excludedCategories.size() <= tradeCategories().size()
+        && data.excludedCategories.hasOnly(tradeCategories())
+        && optionalTimestamp(data, "updatedAt");
+    }
+
     match /users/{userId}/trades/{tradeId} {
-      allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if isSignedInOwner(userId) && validTradeShape(tradeId);
     }
 
     match /users/{userId}/settings/{settingsId} {
-      allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if isSignedInOwner(userId) && settingsId == "portfolioTotals" && validPortfolioSettingsShape();
     }
 
     match /{document=**} {
