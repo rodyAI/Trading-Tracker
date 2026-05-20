@@ -327,24 +327,26 @@ export default function App() {
       return;
     }
 
-    if (trades.length === 0) {
-      setStatusMessage("No trades to recalculate yet.");
+    const tabTrades = trades.filter((trade) => (trade.category ?? "Swing") === activeCategory);
+
+    if (tabTrades.length === 0) {
+      setStatusMessage(`No trades to recalculate in ${activeCategory}.`);
       return;
     }
 
     isRecalculatingRecommendationsRef.current = true;
     setIsRecalculatingRecommendations(true);
     setGlobalError("");
-    setRecommendationProgress({ current: 0, total: trades.length });
+    setRecommendationProgress({ current: 0, total: tabTrades.length });
 
     const updatedRecommendations: TrackedTrade[] = [];
     const failures: string[] = [];
 
     try {
-      for (const [index, trade] of trades.entries()) {
-        setRecommendationProgress({ current: index + 1, total: trades.length });
+      for (const [index, trade] of tabTrades.entries()) {
+        setRecommendationProgress({ current: index + 1, total: tabTrades.length });
         setStatusMessage(
-          `Recalculating sell recommendations ${index + 1}/${trades.length}: ${trade.symbol}`,
+          `Recalculating ${activeCategory} sell recommendations ${index + 1}/${tabTrades.length}: ${trade.symbol}`,
         );
 
         try {
@@ -375,7 +377,7 @@ export default function App() {
       }
 
       setStatusMessage(
-        `Recalculated ${updatedRecommendations.length} sell recommendation${
+        `Recalculated ${updatedRecommendations.length} ${activeCategory} sell recommendation${
           updatedRecommendations.length === 1 ? "" : "s"
         }.`,
       );
@@ -385,7 +387,7 @@ export default function App() {
       setIsRecalculatingRecommendations(false);
       setRecommendationProgress(null);
     }
-  }, [enrichTradeRecommendation, trades, user]);
+  }, [activeCategory, enrichTradeRecommendation, trades, user]);
 
   useEffect(() => {
     if (!user || isLoadingTrades || trades.length === 0) return;
@@ -996,11 +998,11 @@ export default function App() {
             type="button"
             className="secondary-button full-width"
             onClick={() => void recalculateSellRecommendations()}
-            disabled={isRecalculatingRecommendations || trades.length === 0}
+            disabled={isRecalculatingRecommendations || activeTrades.length === 0}
           >
             {isRecalculatingRecommendations
-              ? `Recalculating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? trades.length}...`
-              : "Recalculate Sell Recommendations"}
+              ? `Recalculating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? activeTrades.length}...`
+              : `Recalculate ${activeCategory} Recommendations`}
           </button>
           <div className="utility-actions">
             <button type="button" className="secondary-button" onClick={exportCsv} disabled={trades.length === 0}>Export CSV</button>
