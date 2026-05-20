@@ -13,7 +13,7 @@ import {
   type QueryDocumentSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
-import { requireDb, type User } from "../firebase/client";
+import { firebaseProjectId, requireDb, type User } from "../firebase/client";
 import type { TrackedTrade } from "../utils/tradeCalculations";
 
 const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
@@ -105,6 +105,43 @@ const derivedMarketDataDeletes = () => ({
 
 const hasDerivedMarketData = (data: Record<string, unknown>) =>
   derivedMarketDataFields.some((field) => Object.prototype.hasOwnProperty.call(data, field));
+
+const firestoreDocumentUrl = (user: User, collectionName: string, documentId: string) =>
+  `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/users/${encodeURIComponent(
+    user.uid,
+  )}/${collectionName}/${encodeURIComponent(documentId)}`;
+
+const deleteDocumentViaRest = async (user: User, collectionName: string, documentId: string, idToken: string) => {
+  const response = await fetch(firestoreDocumentUrl(user, collectionName, documentId), {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (response.ok || response.status === 404) return;
+  throw new Error(`REST delete failed for ${collectionName}/${documentId}: ${response.status} ${await response.text()}`);
+};
+
+const setDocumentViaRest = async (
+  user: User,
+  collectionName: string,
+  documentId: string,
+  idToken: string,
+  fields: Record<string, unknown>,
+) => {
+  const response = await fetch(firestoreDocumentUrl(user, collectionName, documentId), {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fields }),
+  });
+
+  if (response.ok) return;
+  throw new Error(`REST write failed for ${collectionName}/${documentId}: ${response.status} ${await response.text()}`);
+};
 
 export interface TradePersistenceDiagnostics {
   uid: string;
@@ -239,6 +276,7 @@ export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
   const matchingTradeDocs = (await getDocsFromServer(tradesCollection(user))).docs.filter(
     (item) => String(item.data().symbol ?? "").trim().toUpperCase() === symbol,
   );
+  const idToken = await user.getIdToken(true);
   const batch = writeBatch(db);
 
   batch.set(deletedSymbolDoc(user, symbol), {
@@ -257,6 +295,19 @@ export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
 
   await batch.commit();
   await waitForPendingWrites(db);
+
+  await setDocumentViaRest(user, "deletedSymbols", symbol, idToken, {
+    symbol: { stringValue: symbol },
+  });
+  await Promise.all(
+    matchingTradeDocs.flatMap((item) => [
+      setDocumentViaRest(user, "deletedTrades", item.id, idToken, {
+        id: { stringValue: item.id },
+        symbol: { stringValue: symbol },
+      }),
+      deleteDocumentViaRest(user, "trades", item.id, idToken),
+    ]),
+  );
 
   const refreshedTrades = await getDocsFromServer(tradesCollection(user));
 

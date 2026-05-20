@@ -32,6 +32,8 @@ export const firebaseRuntimeInfo = {
   appId: requiredConfig.appId ?? "missing",
 };
 
+export const firebaseProjectId = requiredConfig.projectId ?? "";
+
 const configKeyLabels: Record<keyof typeof requiredConfig, string> = {
   apiKey: "VITE_FIREBASE_API_KEY",
   authDomain: "VITE_FIREBASE_AUTH_DOMAIN",
