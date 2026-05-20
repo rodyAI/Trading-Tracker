@@ -202,6 +202,8 @@ const isRecommendationDataError = (trade: TrackedTrade) =>
 const getRecommendationExplanation = (trade: TrackedTrade) =>
   trade.recommendationExplanation || "Recommendation not calculated for this session yet.";
 
+const isVisibleTrade = (trade: TrackedTrade) => trade.isDeleted !== true;
+
 const mergeLocalMarketData = (trade: TrackedTrade, existing: TrackedTrade | undefined): TrackedTrade => {
   if (!existing || existing.symbol !== trade.symbol) return trade;
 
@@ -382,7 +384,9 @@ export default function App() {
       return;
     }
 
-    const symbols = [...new Set(trades.filter((trade) => !trade.isClosed).map((trade) => trade.symbol).filter(Boolean))];
+    const symbols = [
+      ...new Set(trades.filter((trade) => isVisibleTrade(trade) && !trade.isClosed).map((trade) => trade.symbol).filter(Boolean)),
+    ];
     if (symbols.length === 0) {
       setStatusMessage("No trades to refresh yet.");
       return;
@@ -400,7 +404,7 @@ export default function App() {
       const quoteBySymbol = new Map(response.quotes.map((quote) => [quote.symbol.toUpperCase(), quote]));
       const errorBySymbol = new Map(response.errors.map((error) => [error.symbol.toUpperCase(), error.message]));
 
-      const nextTrades = trades.map((trade) => {
+      const nextTrades = trades.filter(isVisibleTrade).map((trade) => {
         const quote = quoteBySymbol.get(trade.symbol.toUpperCase());
         const priceError = errorBySymbol.get(trade.symbol.toUpperCase()) ?? null;
         if (!quote) {
@@ -444,7 +448,7 @@ export default function App() {
       return;
     }
 
-    const tabTrades = trades.filter((trade) => (trade.category ?? "Swing") === activeCategory);
+    const tabTrades = trades.filter((trade) => isVisibleTrade(trade) && (trade.category ?? "Swing") === activeCategory);
 
     if (tabTrades.length === 0) {
       setStatusMessage(`No trades to recalculate in ${activeCategory}.`);
@@ -646,12 +650,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!user || isLoadingTrades || trades.length === 0) return;
+    if (!user || isLoadingTrades || trades.filter(isVisibleTrade).length === 0) return;
     if (initialRefreshUserRef.current === user.uid) return;
 
     initialRefreshUserRef.current = user.uid;
     void refreshPrices();
-  }, [isLoadingTrades, refreshPrices, trades.length, user]);
+  }, [isLoadingTrades, refreshPrices, trades, user]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -827,7 +831,7 @@ export default function App() {
       );
     };
 
-    return [...trades].sort((left, right) => (sortDirection === "asc" ? compare(left, right) : -compare(left, right)));
+    return trades.filter(isVisibleTrade).sort((left, right) => (sortDirection === "asc" ? compare(left, right) : -compare(left, right)));
   }, [sortDirection, sortKey, trades]);
 
   const tradesByCategory = useMemo(
@@ -859,10 +863,11 @@ export default function App() {
     [excludedPortfolioCategories],
   );
   const portfolioTotalTrades = useMemo(
-    () => trades.filter((trade) => shouldIncludeInPortfolioTotals(trade, excludedPortfolioCategorySet)),
+    () => trades.filter((trade) => isVisibleTrade(trade) && shouldIncludeInPortfolioTotals(trade, excludedPortfolioCategorySet)),
     [excludedPortfolioCategorySet, trades],
   );
-  const excludedFromPortfolioTotalCount = trades.length - portfolioTotalTrades.length;
+  const visibleTradeCount = trades.filter(isVisibleTrade).length;
+  const excludedFromPortfolioTotalCount = visibleTradeCount - portfolioTotalTrades.length;
 
   const portfolio = useMemo(() => {
     return summarizeTrades(portfolioTotalTrades);
@@ -893,7 +898,7 @@ export default function App() {
       "Exclude From Portfolio Total",
     ];
 
-    const rows = trades.map((trade) => {
+    const rows = trades.filter(isVisibleTrade).map((trade) => {
       const metrics = tradeMetrics(trade);
       return [
         trade.symbol,
@@ -1375,7 +1380,7 @@ export default function App() {
           </article>
           <article className="summary-card">
             <span>Tracked trades</span>
-            <strong>{isLoadingTrades ? "..." : numberFormatter.format(trades.length)}</strong>
+            <strong>{isLoadingTrades ? "..." : numberFormatter.format(visibleTradeCount)}</strong>
             <small>
               {portfolio.openCount} open / {portfolio.closedCount} closed included.{" "}
               {excludedFromPortfolioTotalCount} excluded from total P/L. {statusMessage}
@@ -1479,7 +1484,7 @@ export default function App() {
               : `Recalculate ${activeCategory} Recommendations`}
           </button>
           <div className="utility-actions">
-            <button type="button" className="secondary-button" onClick={exportCsv} disabled={trades.length === 0}>Export CSV</button>
+            <button type="button" className="secondary-button" onClick={exportCsv} disabled={visibleTradeCount === 0}>Export CSV</button>
             <button
               type="button"
               className="secondary-button"
