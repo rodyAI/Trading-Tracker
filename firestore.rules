@@ -33,6 +33,10 @@ service cloud.firestore {
       ];
     }
 
+    function deletedTradeFields() {
+      return ["id", "symbol", "deletedAt"];
+    }
+
     function optionalPositiveNumber(data, field) {
       return !(field in data) || data[field] == null || (data[field] is number && data[field] > 0);
     }
@@ -96,9 +100,28 @@ service cloud.firestore {
         && optionalTimestamp(data, "updatedAt");
     }
 
+    function validDeletedTradeShape(tradeId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly(deletedTradeFields())
+        && data.keys().hasAll(["id", "symbol"])
+        && data.id == tradeId
+        && data.id is string
+        && data.id.size() > 0
+        && data.id.size() <= 128
+        && data.symbol is string
+        && data.symbol.size() > 0
+        && data.symbol.size() <= 20
+        && optionalTimestamp(data, "deletedAt");
+    }
+
     match /users/{userId}/trades/{tradeId} {
       allow read, delete: if isSignedInOwner(userId);
       allow create, update: if isSignedInOwner(userId) && validTradeShape(tradeId);
+    }
+
+    match /users/{userId}/deletedTrades/{tradeId} {
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if isSignedInOwner(userId) && validDeletedTradeShape(tradeId);
     }
 
     match /users/{userId}/settings/{settingsId} {

@@ -3,13 +3,14 @@ import {
   deleteDoc,
   deleteField,
   doc,
-  getDocFromServer,
   getDocs,
   onSnapshot,
   serverTimestamp,
   setDoc,
   waitForPendingWrites,
   writeBatch,
+  type DocumentData,
+  type QueryDocumentSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
 import { requireDb, type User } from "../firebase/client";
@@ -51,6 +52,8 @@ const derivedMarketDataFields = [
 
 const tradesCollection = (user: User) => collection(requireDb(), "users", user.uid, "trades");
 const tradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "trades", id);
+const deletedTradesCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedTrades");
+const deletedTradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "deletedTrades", id);
 
 const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade => {
   const trade = stripDerivedMarketData(
@@ -105,27 +108,58 @@ export const subscribeToUserTrades = (
   user: User,
   onNext: (trades: TrackedTrade[]) => void,
   onError: (error: Error) => void,
-): Unsubscribe =>
-  onSnapshot(
+): Unsubscribe => {
+  let latestTradeDocs: QueryDocumentSnapshot<DocumentData>[] | null = null;
+  let latestDeletedTradeIds: Set<string> | null = null;
+
+  const emitVisibleTrades = () => {
+    if (!latestTradeDocs || !latestDeletedTradeIds) return;
+
+    const staleDocs = latestTradeDocs.filter(
+      (item) =>
+        item &&
+        item.data().isDeleted !== true &&
+        !latestDeletedTradeIds?.has(item.id) &&
+        hasDerivedMarketData(item.data()),
+    );
+    if (staleDocs.length > 0) {
+      void Promise.all(staleDocs.map((item) => setDoc(item.ref, derivedMarketDataDeletes(), { merge: true }))).catch(
+        (error) => {
+          onError(error instanceof Error ? error : new Error("Failed to clear stale derived market data from Firestore."));
+        },
+      );
+    }
+
+    const trades = latestTradeDocs
+      .filter((item) => item && item.data().isDeleted !== true && !latestDeletedTradeIds?.has(item.id))
+      .map((item) => fromFirestore(item.id, item.data()))
+      .sort((left, right) => left.symbol.localeCompare(right.symbol));
+    onNext(trades);
+  };
+
+  const unsubscribeTrades = onSnapshot(
     tradesCollection(user),
     (snapshot) => {
-      const staleDocs = snapshot.docs.filter((item) => hasDerivedMarketData(item.data()));
-      if (staleDocs.length > 0) {
-        void Promise.all(staleDocs.map((item) => setDoc(item.ref, derivedMarketDataDeletes(), { merge: true }))).catch(
-          (error) => {
-            onError(error instanceof Error ? error : new Error("Failed to clear stale derived market data from Firestore."));
-          },
-        );
-      }
-
-      const trades = snapshot.docs
-        .filter((item) => item.data().isDeleted !== true)
-        .map((item) => fromFirestore(item.id, item.data()))
-        .sort((left, right) => left.symbol.localeCompare(right.symbol));
-      onNext(trades);
+      latestTradeDocs = snapshot.docs;
+      emitVisibleTrades();
     },
     onError,
   );
+
+  const unsubscribeDeletedTrades = onSnapshot(
+    deletedTradesCollection(user),
+    (snapshot) => {
+      latestDeletedTradeIds = new Set(snapshot.docs.map((item) => item.id));
+      emitVisibleTrades();
+    },
+    onError,
+  );
+
+  return () => {
+    unsubscribeTrades();
+    unsubscribeDeletedTrades();
+  };
+};
 
 export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
   const db = requireDb();
@@ -137,7 +171,13 @@ export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
 export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
   const db = requireDb();
   const ref = tradeDoc(user, trade.id);
+  const deletedRef = deletedTradeDoc(user, trade.id);
 
+  await setDoc(deletedRef, {
+    id: trade.id,
+    symbol: trade.symbol,
+    deletedAt: serverTimestamp(),
+  });
   await setDoc(ref, {
     ...toFirestore({
       ...trade,
@@ -153,11 +193,6 @@ export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
     await waitForPendingWrites(db);
   } catch {
     return;
-  }
-
-  const snapshot = await getDocFromServer(ref);
-  if (snapshot.exists() && snapshot.data().isDeleted !== true) {
-    throw new Error("Trade delete did not reach Firestore. Please try again.");
   }
 };
 
