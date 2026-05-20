@@ -2,7 +2,6 @@ import {
   collection,
   deleteField,
   doc,
-  getDocFromServer,
   getDocs,
   getDocsFromServer,
   onSnapshot,
@@ -57,7 +56,6 @@ const deletedTradesCollection = (user: User) => collection(requireDb(), "users",
 const deletedTradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "deletedTrades", id);
 const deletedSymbolsCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedSymbols");
 const deletedSymbolDoc = (user: User, symbol: string) => doc(requireDb(), "users", user.uid, "deletedSymbols", symbol);
-const diagnosticsDoc = (user: User) => doc(requireDb(), "users", user.uid, "diagnostics", "writeProbe");
 
 const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade => {
   const trade = stripDerivedMarketData(
@@ -110,11 +108,6 @@ const hasDerivedMarketData = (data: Record<string, unknown>) =>
 
 export interface TradePersistenceDiagnostics {
   uid: string;
-  writeProbe: {
-    requestedId: string;
-    confirmed: boolean;
-    readBackId: string;
-  };
   rawTrades: Array<{
     id: string;
     symbol: string;
@@ -126,31 +119,8 @@ export interface TradePersistenceDiagnostics {
   visibleTradeIds: string[];
 }
 
-const runWriteProbe = async (user: User) => {
-  const db = requireDb();
-  const requestedId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const ref = diagnosticsDoc(user);
-
-  await setDoc(ref, {
-    requestedId,
-    uid: user.uid,
-    updatedAt: serverTimestamp(),
-  });
-  await waitForPendingWrites(db);
-
-  const snapshot = await getDocFromServer(ref);
-  const readBackId = snapshot.exists() && typeof snapshot.data().requestedId === "string" ? snapshot.data().requestedId : "";
-
-  return {
-    requestedId,
-    confirmed: readBackId === requestedId,
-    readBackId,
-  };
-};
-
 export const loadTradePersistenceDiagnostics = async (user: User): Promise<TradePersistenceDiagnostics> => {
-  const [writeProbe, tradeSnapshot, deletedSnapshot, deletedSymbolSnapshot] = await Promise.all([
-    runWriteProbe(user),
+  const [tradeSnapshot, deletedSnapshot, deletedSymbolSnapshot] = await Promise.all([
     getDocsFromServer(tradesCollection(user)),
     getDocsFromServer(deletedTradesCollection(user)),
     getDocsFromServer(deletedSymbolsCollection(user)),
@@ -170,7 +140,6 @@ export const loadTradePersistenceDiagnostics = async (user: User): Promise<Trade
 
   return {
     uid: user.uid,
-    writeProbe,
     rawTrades,
     deletedTradeIds: [...deletedTradeIds].sort(),
     deletedSymbols: [...deletedSymbols].sort(),
@@ -283,34 +252,21 @@ export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
       symbol,
       deletedAt: serverTimestamp(),
     });
-    batch.set(
-      item.ref,
-      {
-        ...toFirestore({
-          ...fromFirestore(item.id, item.data()),
-          isDeleted: true,
-        }),
-        isDeleted: true,
-        deletedAt: serverTimestamp(),
-      },
-    );
+    batch.delete(item.ref);
   }
 
   await batch.commit();
   await waitForPendingWrites(db);
 
-  const [symbolSnapshot, refreshedTrades] = await Promise.all([
-    getDocFromServer(deletedSymbolDoc(user, symbol)),
-    getDocsFromServer(tradesCollection(user)),
-  ]);
+  const refreshedTrades = await getDocsFromServer(tradesCollection(user));
 
-  const stillVisible = refreshedTrades.docs.some((item) => {
+  const stillExists = refreshedTrades.docs.some((item) => {
     const data = item.data();
-    return String(data.symbol ?? "").trim().toUpperCase() === symbol && data.isDeleted !== true;
+    return String(data.symbol ?? "").trim().toUpperCase() === symbol;
   });
 
-  if (!symbolSnapshot.exists() || stillVisible) {
-    throw new Error("Firestore did not confirm the delete marker. Please try again.");
+  if (stillExists) {
+    throw new Error(`${symbol} still exists in Firestore after delete. Please try again.`);
   }
 };
 

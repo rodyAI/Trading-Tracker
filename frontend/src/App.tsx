@@ -720,9 +720,14 @@ export default function App() {
     const confirmed = window.confirm(`Delete ${trade.symbol}? This removes it from Firestore and cannot be undone.`);
     if (!confirmed) return;
 
+    setGlobalError("");
+    setStatusMessage(`Deleting ${trade.symbol} from Firestore...`);
+
     try {
       await deleteUserTrade(user, trade);
-      setTrades((currentTrades) => currentTrades.filter((currentTrade) => currentTrade.id !== trade.id));
+      setTrades((currentTrades) =>
+        currentTrades.filter((currentTrade) => currentTrade.symbol.toUpperCase() !== trade.symbol.toUpperCase()),
+      );
       if (form.id === trade.id) setForm(emptyForm);
       setStatusMessage(`${trade.symbol} delete confirmed by Firestore.`);
     } catch (error) {
@@ -770,9 +775,6 @@ export default function App() {
           `Firebase project: ${firebaseRuntimeInfo.projectId}`,
           `Firebase auth domain: ${firebaseRuntimeInfo.authDomain}`,
           `Firebase app id: ${firebaseRuntimeInfo.appId}`,
-          `Write probe: ${tradeDiagnostics.writeProbe.confirmed ? "confirmed" : "FAILED"} requested=${
-            tradeDiagnostics.writeProbe.requestedId
-          } readBack=${tradeDiagnostics.writeProbe.readBackId || "none"}`,
           `Raw trades: ${rawTradeText}`,
           `Deleted markers: ${deletedMarkerText}`,
           `Deleted symbols: ${deletedSymbolText}`,
