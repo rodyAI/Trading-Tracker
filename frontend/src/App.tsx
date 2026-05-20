@@ -731,17 +731,19 @@ export default function App() {
         currentTrades.filter((currentTrade) => currentTrade.symbol.toUpperCase() !== trade.symbol.toUpperCase()),
       );
       if (form.id === trade.id) setForm(emptyForm);
-      setDeleteResult(
-        `${result.symbol} delete confirmed. Deleted server doc ids: ${
-          result.matchedIds.length > 0 ? result.matchedIds.join(", ") : "none found before delete"
-        }. Remaining server ids: none.`,
-      );
+      const message = `${result.symbol} delete confirmed. Deleted server doc ids: ${
+        result.matchedIds.length > 0 ? result.matchedIds.join(", ") : "none found before delete"
+      }. Remaining server ids: none.`;
+      setDeleteResult(message);
       setStatusMessage(`${trade.symbol} delete confirmed by Firestore.`);
+      window.alert(message);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to delete trade.";
+      const deleteMessage = `Delete failed for ${trade.symbol}: ${message}`;
       setGlobalError(message);
-      setDeleteResult(`Delete failed for ${trade.symbol}: ${message}`);
+      setDeleteResult(deleteMessage);
       setStatusMessage(`${trade.symbol} delete failed.`);
+      window.alert(deleteMessage);
     }
   };
 
