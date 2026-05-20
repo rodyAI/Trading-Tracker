@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MarketCandle, MarketDataProviderId } from "@shared/types";
+import { buildInfo } from "./buildInfo";
 import {
   signInWithEmail,
   signInWithGoogle,
@@ -40,7 +41,6 @@ type SortDirection = "asc" | "desc";
 const PROVIDER_STORAGE_KEY = "swing-trading-tracker-provider";
 const PORTFOLIO_SETTINGS_STORAGE_PREFIX = "swing-trading-tracker-portfolio-settings";
 const REFRESH_STEP_TIMEOUT_MS = 30_000;
-const APP_BUILD_ID = "delete-ledger-2026-05-20-2";
 const formatTimeoutSeconds = (timeoutMs = REFRESH_STEP_TIMEOUT_MS) => Math.round(timeoutMs / 1000);
 
 const emptyForm: TradeFormValues = {
@@ -1303,7 +1303,6 @@ export default function App() {
           </p>
           <div className="account-bar">
             <span>{user.email ?? "Signed in"}</span>
-            <code className="build-stamp">Build {APP_BUILD_ID}</code>
             <button type="button" className="secondary-button" onClick={() => void signOutCurrentUser()}>
               Sign Out
             </button>
@@ -1584,6 +1583,13 @@ export default function App() {
           </div>
         </section>
       </section>
+      <footer className="app-version-footer" aria-label="Application version">
+        <span>Version {buildInfo.version}</span>
+        <span>Git build {buildInfo.builds.git}</span>
+        <span>Firestore build {buildInfo.builds.firestore}</span>
+        <span>Cloudflare build {buildInfo.builds.cloudflare}</span>
+        <span>Ext build {buildInfo.builds.ext}</span>
+      </footer>
     </main>
   );
 }

@@ -211,15 +211,6 @@ label span,
   font-size: 0.9rem;
 }
 
-.build-stamp {
-  color: var(--muted);
-  font-size: 0.72rem;
-  padding: 5px 7px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-}
-
 .panel {
   padding: 20px;
 }
@@ -589,6 +580,23 @@ td small.recommendation-error {
 
 .mobile-cards {
   display: none;
+}
+
+.app-version-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.app-version-footer span {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
 }
 
 .trade-card {
