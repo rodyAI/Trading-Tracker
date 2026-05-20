@@ -14,7 +14,6 @@ import {
   deleteUserTrade,
   importUserTrades,
   saveUserTrade,
-  saveUserTradeRecommendations,
   subscribeToUserTrades,
 } from "./services/firebaseTradeStore";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
@@ -39,7 +38,6 @@ type SortDirection = "asc" | "desc";
 
 const PROVIDER_STORAGE_KEY = "swing-trading-tracker-provider";
 const REFRESH_STEP_TIMEOUT_MS = 30_000;
-const FIRESTORE_SAVE_TIMEOUT_MS = 60_000;
 const formatTimeoutSeconds = (timeoutMs = REFRESH_STEP_TIMEOUT_MS) => Math.round(timeoutMs / 1000);
 
 const emptyForm: TradeFormValues = {
@@ -145,7 +143,10 @@ const isRecommendationDataError = (trade: TrackedTrade) =>
   trade.recommendationExplanation?.startsWith("Candle data could not be loaded") ||
   trade.recommendationExplanation?.startsWith("Candle data was unavailable");
 
-const mergeTransientMarketData = (trade: TrackedTrade, existing: TrackedTrade | undefined): TrackedTrade => {
+const getRecommendationExplanation = (trade: TrackedTrade) =>
+  trade.recommendationExplanation || "Recommendation not calculated for this session yet.";
+
+const mergeLocalMarketData = (trade: TrackedTrade, existing: TrackedTrade | undefined): TrackedTrade => {
   if (!existing || existing.symbol !== trade.symbol) return trade;
 
   return {
@@ -154,6 +155,8 @@ const mergeTransientMarketData = (trade: TrackedTrade, existing: TrackedTrade | 
     currentPriceAsOf: existing.currentPriceAsOf ?? null,
     currentPriceProvider: existing.currentPriceProvider ?? null,
     priceError: existing.priceError ?? null,
+    recommendedTakeProfit: existing.recommendedTakeProfit ?? null,
+    recommendationExplanation: existing.recommendationExplanation ?? "",
   };
 };
 
@@ -212,7 +215,7 @@ export default function App() {
       (nextTrades) => {
         setTrades((currentTrades) =>
           nextTrades.map((trade) =>
-            mergeTransientMarketData(
+            mergeLocalMarketData(
               trade,
               currentTrades.find((currentTrade) => currentTrade.id === trade.id),
             ),
@@ -348,7 +351,6 @@ export default function App() {
 
     const updatedRecommendations: TrackedTrade[] = [];
     const failures: string[] = [];
-    let saveErrorMessage = "";
 
     try {
       for (const [index, trade] of tabTrades.entries()) {
@@ -378,33 +380,15 @@ export default function App() {
             };
           }),
         );
-
-        setStatusMessage(`Saving ${updatedRecommendations.length} ${activeCategory} recommendation updates to Firestore...`);
-        try {
-          await withTimeout(
-            saveUserTradeRecommendations(user, updatedRecommendations),
-            `Saving recommendation updates to Firestore timed out after ${formatTimeoutSeconds(
-              FIRESTORE_SAVE_TIMEOUT_MS,
-            )} seconds. The screen was updated, and the save may still complete in the background.`,
-            FIRESTORE_SAVE_TIMEOUT_MS,
-          );
-        } catch (error) {
-          saveErrorMessage =
-            error instanceof Error
-              ? error.message
-              : "Recommendation updates were shown on screen, but saving them to Firestore failed.";
-        }
       }
 
       setStatusMessage(
-        `Recalculated ${updatedRecommendations.length} ${activeCategory} sell recommendation${
+        `Updated ${updatedRecommendations.length} ${activeCategory} sell recommendation${
           updatedRecommendations.length === 1 ? "" : "s"
-        }.`,
+        } locally.`,
       );
       setGlobalError(
-        [failures.length > 0 ? `Some recommendations could not be recalculated. ${failures.join(" ")}` : "", saveErrorMessage]
-          .filter(Boolean)
-          .join(" "),
+        failures.length > 0 ? `Some recommendations could not be recalculated. ${failures.join(" ")}` : "",
       );
     } finally {
       isRecalculatingRecommendationsRef.current = false;
@@ -459,16 +443,16 @@ export default function App() {
     setStatusMessage("Saving trade and calculating the recommended sell price...");
     const tradeWithRecommendation = await enrichTradeRecommendation(baseTrade);
     try {
-      const savedTrade = await saveUserTrade(user, tradeWithRecommendation);
+      await saveUserTrade(user, tradeWithRecommendation);
       setTrades((currentTrades) => {
-        const exists = currentTrades.some((trade) => trade.id === savedTrade.id);
-        if (!exists) return [savedTrade, ...currentTrades];
-        return currentTrades.map((trade) => (trade.id === savedTrade.id ? savedTrade : trade));
+        const exists = currentTrades.some((trade) => trade.id === tradeWithRecommendation.id);
+        if (!exists) return [tradeWithRecommendation, ...currentTrades];
+        return currentTrades.map((trade) => (trade.id === tradeWithRecommendation.id ? tradeWithRecommendation : trade));
       });
 
-      setActiveCategory(savedTrade.category ?? "Swing");
+      setActiveCategory(tradeWithRecommendation.category ?? "Swing");
       setForm(emptyForm);
-      setStatusMessage(`${savedTrade.symbol} saved to Firestore. Refresh prices to update live P/L.`);
+      setStatusMessage(`${tradeWithRecommendation.symbol} saved. Sell recommendation updated locally.`);
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Failed to save trade to Firestore.");
       setStatusMessage("Trade save failed.");
@@ -669,11 +653,15 @@ export default function App() {
 
     if (importedTrades.length > 0) {
       const savedTrades = await importUserTrades(user, importedTrades);
-      setTrades((currentTrades) => [...savedTrades, ...currentTrades]);
+      const localTrades = savedTrades.map((savedTrade) => {
+        const localTrade = importedTrades.find((trade) => trade.id === savedTrade.id);
+        return localTrade ? mergeLocalMarketData(savedTrade, localTrade) : savedTrade;
+      });
+      setTrades((currentTrades) => [...localTrades, ...currentTrades]);
       setActiveCategory(targetCategory);
       setIsImportChooserOpen(false);
       setStatusMessage(
-        `Imported ${savedTrades.length} trade${savedTrades.length === 1 ? "" : "s"} into ${targetCategory}.`,
+        `Imported ${savedTrades.length} trade${savedTrades.length === 1 ? "" : "s"} into ${targetCategory}. Recommendations updated locally.`,
       );
     } else {
       setGlobalError("No valid trades were found in the CSV.");
@@ -721,7 +709,7 @@ export default function App() {
         <td>
           <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
           <small className={recommendationFailed ? "recommendation-error" : undefined}>
-            {trade.recommendationExplanation}
+            {getRecommendationExplanation(trade)}
           </small>
         </td>
         <td>
@@ -791,7 +779,7 @@ export default function App() {
         <div className={`recommendation-box ${recommendationFailed ? "failed" : ""}`}>
           <span>Recommended Sell</span>
           <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
-          <p>{trade.recommendationExplanation}</p>
+          <p>{getRecommendationExplanation(trade)}</p>
         </div>
         {trade.notes && <p className="notes-text">{trade.notes}</p>}
         {trade.priceError && <p className="field-error">{trade.priceError}</p>}
