@@ -6,6 +6,7 @@ import {
   signInWithGoogle,
   signOutCurrentUser,
   signUpWithEmail,
+  firebaseRuntimeInfo,
   isFirebaseConfigured,
   missingFirebaseConfigKeys,
   subscribeToAuth,
@@ -766,6 +767,12 @@ export default function App() {
       setPersistenceDiagnostics(
         [
           `UID: ${tradeDiagnostics.uid}`,
+          `Firebase project: ${firebaseRuntimeInfo.projectId}`,
+          `Firebase auth domain: ${firebaseRuntimeInfo.authDomain}`,
+          `Firebase app id: ${firebaseRuntimeInfo.appId}`,
+          `Write probe: ${tradeDiagnostics.writeProbe.confirmed ? "confirmed" : "FAILED"} requested=${
+            tradeDiagnostics.writeProbe.requestedId
+          } readBack=${tradeDiagnostics.writeProbe.readBackId || "none"}`,
           `Raw trades: ${rawTradeText}`,
           `Deleted markers: ${deletedMarkerText}`,
           `Deleted symbols: ${deletedSymbolText}`,

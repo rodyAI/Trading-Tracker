@@ -57,6 +57,7 @@ const deletedTradesCollection = (user: User) => collection(requireDb(), "users",
 const deletedTradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "deletedTrades", id);
 const deletedSymbolsCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedSymbols");
 const deletedSymbolDoc = (user: User, symbol: string) => doc(requireDb(), "users", user.uid, "deletedSymbols", symbol);
+const diagnosticsDoc = (user: User) => doc(requireDb(), "users", user.uid, "diagnostics", "writeProbe");
 
 const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade => {
   const trade = stripDerivedMarketData(
@@ -109,6 +110,11 @@ const hasDerivedMarketData = (data: Record<string, unknown>) =>
 
 export interface TradePersistenceDiagnostics {
   uid: string;
+  writeProbe: {
+    requestedId: string;
+    confirmed: boolean;
+    readBackId: string;
+  };
   rawTrades: Array<{
     id: string;
     symbol: string;
@@ -120,8 +126,31 @@ export interface TradePersistenceDiagnostics {
   visibleTradeIds: string[];
 }
 
+const runWriteProbe = async (user: User) => {
+  const db = requireDb();
+  const requestedId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const ref = diagnosticsDoc(user);
+
+  await setDoc(ref, {
+    requestedId,
+    uid: user.uid,
+    updatedAt: serverTimestamp(),
+  });
+  await waitForPendingWrites(db);
+
+  const snapshot = await getDocFromServer(ref);
+  const readBackId = snapshot.exists() && typeof snapshot.data().requestedId === "string" ? snapshot.data().requestedId : "";
+
+  return {
+    requestedId,
+    confirmed: readBackId === requestedId,
+    readBackId,
+  };
+};
+
 export const loadTradePersistenceDiagnostics = async (user: User): Promise<TradePersistenceDiagnostics> => {
-  const [tradeSnapshot, deletedSnapshot, deletedSymbolSnapshot] = await Promise.all([
+  const [writeProbe, tradeSnapshot, deletedSnapshot, deletedSymbolSnapshot] = await Promise.all([
+    runWriteProbe(user),
     getDocsFromServer(tradesCollection(user)),
     getDocsFromServer(deletedTradesCollection(user)),
     getDocsFromServer(deletedSymbolsCollection(user)),
@@ -141,6 +170,7 @@ export const loadTradePersistenceDiagnostics = async (user: User): Promise<Trade
 
   return {
     uid: user.uid,
+    writeProbe,
     rawTrades,
     deletedTradeIds: [...deletedTradeIds].sort(),
     deletedSymbols: [...deletedSymbols].sort(),

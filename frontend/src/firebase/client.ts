@@ -26,6 +26,12 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
+export const firebaseRuntimeInfo = {
+  projectId: requiredConfig.projectId ?? "missing",
+  authDomain: requiredConfig.authDomain ?? "missing",
+  appId: requiredConfig.appId ?? "missing",
+};
+
 const configKeyLabels: Record<keyof typeof requiredConfig, string> = {
   apiKey: "VITE_FIREBASE_API_KEY",
   authDomain: "VITE_FIREBASE_AUTH_DOMAIN",
