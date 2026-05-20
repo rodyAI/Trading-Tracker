@@ -15,6 +15,7 @@ import {
   deleteUserTrade,
   importUserTrades,
   loadTradePersistenceDiagnostics,
+  loadUserTradesFromServer,
   saveUserTrade,
   subscribeToUserTrades,
 } from "./services/firebaseTradeStore";
@@ -256,6 +257,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
   const [persistenceDiagnostics, setPersistenceDiagnostics] = useState("");
+  const [lastServerSync, setLastServerSync] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculatingRecommendations, setIsRecalculatingRecommendations] = useState(false);
   const [recommendationProgress, setRecommendationProgress] = useState<{ current: number; total: number } | null>(null);
@@ -266,6 +268,27 @@ export default function App() {
   const isRefreshingRef = useRef(false);
   const isRecalculatingRecommendationsRef = useRef(false);
   const portfolioSettingsSaveInFlightRef = useRef(false);
+
+  const syncServerState = useCallback(async () => {
+    if (!user) return;
+
+    const [serverTrades, serverSettings] = await Promise.all([
+      loadUserTradesFromServer(user),
+      loadPortfolioSettingsFromServer(user),
+    ]);
+
+    setTrades((currentTrades) =>
+      serverTrades.map((trade) =>
+        mergeLocalMarketData(
+          trade,
+          currentTrades.find((currentTrade) => currentTrade.id === trade.id),
+        ),
+      ),
+    );
+    setExcludedPortfolioCategories(serverSettings.excludedCategories);
+    cacheExcludedCategories(user, serverSettings.excludedCategories);
+    setLastServerSync(new Date().toLocaleTimeString());
+  }, [user]);
 
   useEffect(() => {
     return subscribeToAuth((nextUser) => {
@@ -286,6 +309,11 @@ export default function App() {
 
     setIsLoadingTrades(true);
     setGlobalError("");
+    void syncServerState()
+      .then(() => setStatusMessage("Loaded latest server state."))
+      .catch((error) => {
+        setGlobalError(error instanceof Error ? error.message : "Failed to load latest server state.");
+      });
 
     return subscribeToUserTrades(
       user,
@@ -307,7 +335,7 @@ export default function App() {
         setStatusMessage("Trade load failed.");
       },
     );
-  }, [user]);
+  }, [syncServerState, user]);
 
   useEffect(() => {
     if (!user) {
@@ -1648,6 +1676,21 @@ export default function App() {
         <span>Firestore build {buildInfo.builds.firestore}</span>
         <span>Cloudflare build {buildInfo.builds.cloudflare}</span>
         <span>Ext build {buildInfo.builds.ext}</span>
+        <span>UID {user.uid.slice(0, 8)}</span>
+        {lastServerSync && <span>Server sync {lastServerSync}</span>}
+        <button
+          type="button"
+          className="footer-debug-button"
+          onClick={() =>
+            void syncServerState()
+              .then(() => setStatusMessage("Loaded latest server state."))
+              .catch((error) => {
+                setGlobalError(error instanceof Error ? error.message : "Failed to load latest server state.");
+              })
+          }
+        >
+          Sync from server
+        </button>
         <button type="button" className="footer-debug-button" onClick={() => void handlePersistenceCheck()}>
           Check server data
         </button>

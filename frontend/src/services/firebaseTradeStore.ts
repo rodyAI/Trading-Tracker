@@ -144,6 +144,19 @@ export const loadTradePersistenceDiagnostics = async (user: User): Promise<Trade
   };
 };
 
+export const loadUserTradesFromServer = async (user: User) => {
+  const [tradeSnapshot, deletedSnapshot] = await Promise.all([
+    getDocsFromServer(tradesCollection(user)),
+    getDocsFromServer(deletedTradesCollection(user)),
+  ]);
+  const deletedTradeIds = new Set(deletedSnapshot.docs.map((item) => item.id));
+
+  return tradeSnapshot.docs
+    .filter((item) => item.data().isDeleted !== true && !deletedTradeIds.has(item.id))
+    .map((item) => fromFirestore(item.id, item.data()))
+    .sort((left, right) => left.symbol.localeCompare(right.symbol));
+};
+
 export const subscribeToUserTrades = (
   user: User,
   onNext: (trades: TrackedTrade[]) => void,
