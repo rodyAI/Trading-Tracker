@@ -1,8 +1,8 @@
 import {
   collection,
-  deleteDoc,
   deleteField,
   doc,
+  getDocFromServer,
   getDocs,
   onSnapshot,
   serverTimestamp,
@@ -172,13 +172,14 @@ export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
   const db = requireDb();
   const ref = tradeDoc(user, trade.id);
   const deletedRef = deletedTradeDoc(user, trade.id);
+  const batch = writeBatch(db);
 
-  await setDoc(deletedRef, {
+  batch.set(deletedRef, {
     id: trade.id,
     symbol: trade.symbol,
     deletedAt: serverTimestamp(),
   });
-  await setDoc(ref, {
+  batch.set(ref, {
     ...toFirestore({
       ...trade,
       isDeleted: true,
@@ -186,13 +187,16 @@ export const deleteUserTrade = async (user: User, trade: TrackedTrade) => {
     isDeleted: true,
     deletedAt: serverTimestamp(),
   });
+
+  await batch.commit();
   await waitForPendingWrites(db);
 
-  try {
-    await deleteDoc(ref);
-    await waitForPendingWrites(db);
-  } catch {
-    return;
+  const [tradeSnapshot, deletedSnapshot] = await Promise.all([
+    getDocFromServer(ref),
+    getDocFromServer(deletedRef),
+  ]);
+  if (!tradeSnapshot.exists() || tradeSnapshot.data().isDeleted !== true || !deletedSnapshot.exists()) {
+    throw new Error("Firestore did not confirm the delete marker. Please try again.");
   }
 };
 

@@ -23,6 +23,12 @@ const normalizeSettings = (data: Record<string, unknown> | undefined): Portfolio
   };
 };
 
+const sameCategories = (left: TradeCategory[], right: TradeCategory[]) => {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return leftSet.size === rightSet.size && [...leftSet].every((category) => rightSet.has(category));
+};
+
 export const subscribeToPortfolioSettings = (
   user: User,
   onNext: (settings: PortfolioSettings) => void,
@@ -50,5 +56,9 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
 
   const snapshot = await getDocFromServer(ref);
   if (!snapshot.exists()) throw new Error("Portfolio settings were not found after saving.");
-  return { ...normalizeSettings(snapshot.data()), exists: true };
+  const savedSettings = normalizeSettings(snapshot.data());
+  if (!sameCategories(savedSettings.excludedCategories, settings.excludedCategories)) {
+    throw new Error("Firestore did not confirm the portfolio settings update. Please try again.");
+  }
+  return { ...savedSettings, exists: true };
 };
