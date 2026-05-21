@@ -153,6 +153,41 @@ label span,
   margin-top: 8px;
 }
 
+.section-picker-panel {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.section-picker-panel h2 {
+  margin: 0;
+}
+
+.section-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.section-choice {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+  min-height: 46px;
+  padding: 10px;
+  color: var(--text);
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.section-choice input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.7fr);
@@ -896,7 +931,8 @@ td small.recommendation-error {
   }
 
   .summary-grid,
-  .form-grid {
+  .form-grid,
+  .section-choice-grid {
     grid-template-columns: 1fr;
   }
 

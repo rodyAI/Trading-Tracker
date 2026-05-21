@@ -234,6 +234,10 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState<TradeCategory>("Swing");
   const [importCategory, setImportCategory] = useState<TradeCategory>("Swing");
   const [excludedPortfolioCategories, setExcludedPortfolioCategories] = useState<TradeCategory[]>([]);
+  const [enabledTradeCategories, setEnabledTradeCategories] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
+  const [sectionSelectionDraft, setSectionSelectionDraft] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
+  const [isSectionChooserOpen, setIsSectionChooserOpen] = useState(false);
+  const [isSavingSections, setIsSavingSections] = useState(false);
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
@@ -267,6 +271,9 @@ export default function App() {
       ),
     );
     setExcludedPortfolioCategories(serverSettings.excludedCategories);
+    setEnabledTradeCategories(serverSettings.enabledCategories);
+    setSectionSelectionDraft(serverSettings.enabledCategories);
+    if (!serverSettings.exists) setIsSectionChooserOpen(true);
     cacheExcludedCategories(user, serverSettings.excludedCategories);
     setLastServerSync(new Date().toLocaleTimeString());
   }, [user]);
@@ -282,6 +289,9 @@ export default function App() {
     if (!user) {
       setTrades([]);
       setExcludedPortfolioCategories([]);
+      setEnabledTradeCategories([...TRADE_CATEGORIES]);
+      setSectionSelectionDraft([...TRADE_CATEGORIES]);
+      setIsSectionChooserOpen(false);
       setIsLoadingTrades(false);
       initialRefreshUserRef.current = null;
       setStatusMessage("Sign in to load your trades.");
@@ -613,14 +623,72 @@ export default function App() {
     setExcludedPortfolioCategories(nextCategories);
     cacheExcludedCategories(user, nextCategories);
     try {
-      const savedSettings = await savePortfolioSettings(user, { excludedCategories: nextCategories });
+      const savedSettings = await savePortfolioSettings(user, {
+        excludedCategories: nextCategories,
+        enabledCategories: enabledTradeCategories,
+      });
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
+      setEnabledTradeCategories(savedSettings.enabledCategories);
+      setSectionSelectionDraft(savedSettings.enabledCategories);
       cacheExcludedCategories(user, savedSettings.excludedCategories);
       setStatusMessage(`${category} ${nextCategories.includes(category) ? "excluded from" : "included in"} portfolio total P/L.`);
     } catch (error) {
       setExcludedPortfolioCategories(excludedPortfolioCategories);
       cacheExcludedCategories(user, excludedPortfolioCategories);
       setGlobalError(error instanceof Error ? error.message : `Failed to update ${category} total P/L setting.`);
+    }
+  };
+
+  const toggleSectionSelectionDraft = (category: TradeCategory) => {
+    setSectionSelectionDraft((current) =>
+      current.includes(category) ? current.filter((item) => item !== category) : [...current, category],
+    );
+  };
+
+  const saveSectionSelection = async () => {
+    if (!user) {
+      setStatusMessage("Sign in before changing dashboard sections.");
+      return;
+    }
+
+    const nextEnabledCategories = TRADE_CATEGORIES.filter((category) => sectionSelectionDraft.includes(category));
+    if (nextEnabledCategories.length === 0) {
+      setGlobalError("Select at least one dashboard section.");
+      return;
+    }
+
+    const nextExcludedCategories = excludedPortfolioCategories.filter((category) =>
+      nextEnabledCategories.includes(category),
+    );
+
+    setIsSavingSections(true);
+    setGlobalError("");
+    try {
+      const savedSettings = await savePortfolioSettings(user, {
+        excludedCategories: nextExcludedCategories,
+        enabledCategories: nextEnabledCategories,
+      });
+      setEnabledTradeCategories(savedSettings.enabledCategories);
+      setSectionSelectionDraft(savedSettings.enabledCategories);
+      setExcludedPortfolioCategories(savedSettings.excludedCategories);
+      cacheExcludedCategories(user, savedSettings.excludedCategories);
+      setActiveCategory((current) =>
+        savedSettings.enabledCategories.includes(current) ? current : savedSettings.enabledCategories[0],
+      );
+      setForm((current) =>
+        savedSettings.enabledCategories.includes(current.category)
+          ? current
+          : { ...current, category: savedSettings.enabledCategories[0] },
+      );
+      setImportCategory((current) =>
+        savedSettings.enabledCategories.includes(current) ? current : savedSettings.enabledCategories[0],
+      );
+      setIsSectionChooserOpen(false);
+      setStatusMessage("Dashboard sections saved.");
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : "Failed to save dashboard sections.");
+    } finally {
+      setIsSavingSections(false);
     }
   };
 
@@ -777,6 +845,8 @@ export default function App() {
         tradeDiagnostics.visibleTradeIds.length === 0 ? "none" : tradeDiagnostics.visibleTradeIds.join(", ");
       const excludedCategoryText =
         portfolioSettings.excludedCategories.length === 0 ? "none" : portfolioSettings.excludedCategories.join(", ");
+      const enabledCategoryText =
+        portfolioSettings.enabledCategories.length === 0 ? "none" : portfolioSettings.enabledCategories.join(", ");
 
       setPersistenceDiagnostics(
         [
@@ -789,6 +859,7 @@ export default function App() {
           `Deleted symbols: ${deletedSymbolText}`,
           `Visible trade ids: ${visibleTradeText}`,
           `Server excluded tabs: ${excludedCategoryText}`,
+          `Server enabled tabs: ${enabledCategoryText}`,
         ].join("\n"),
       );
       setStatusMessage("Server data check complete.");
@@ -839,6 +910,11 @@ export default function App() {
       ),
     [sortedTrades],
   );
+  const visibleTradeCategories = useMemo(
+    () => TRADE_CATEGORIES.filter((category) => enabledTradeCategories.includes(category)),
+    [enabledTradeCategories],
+  );
+  const visibleTradeCategorySet = useMemo(() => new Set(visibleTradeCategories), [visibleTradeCategories]);
   const activeTrades = tradesByCategory[activeCategory] ?? [];
   const categorySummaries = useMemo(
     () =>
@@ -857,15 +933,32 @@ export default function App() {
     [excludedPortfolioCategories],
   );
   const portfolioTotalTrades = useMemo(
-    () => trades.filter((trade) => isVisibleTrade(trade) && shouldIncludeInPortfolioTotals(trade, excludedPortfolioCategorySet)),
-    [excludedPortfolioCategorySet, trades],
+    () =>
+      trades.filter(
+        (trade) =>
+          isVisibleTrade(trade) &&
+          visibleTradeCategorySet.has(trade.category ?? "Swing") &&
+          shouldIncludeInPortfolioTotals(trade, excludedPortfolioCategorySet),
+      ),
+    [excludedPortfolioCategorySet, trades, visibleTradeCategorySet],
   );
-  const visibleTradeCount = trades.filter(isVisibleTrade).length;
+  const visibleTradeCount = trades.filter(
+    (trade) => isVisibleTrade(trade) && visibleTradeCategorySet.has(trade.category ?? "Swing"),
+  ).length;
   const excludedFromPortfolioTotalCount = visibleTradeCount - portfolioTotalTrades.length;
 
   const portfolio = useMemo(() => {
     return summarizeTrades(portfolioTotalTrades);
   }, [portfolioTotalTrades]);
+
+  useEffect(() => {
+    const fallbackCategory = visibleTradeCategories[0] ?? "Swing";
+    if (!visibleTradeCategories.includes(activeCategory)) setActiveCategory(fallbackCategory);
+    if (!visibleTradeCategories.includes(form.category)) {
+      setForm((current) => ({ ...current, category: fallbackCategory }));
+    }
+    if (!visibleTradeCategories.includes(importCategory)) setImportCategory(fallbackCategory);
+  }, [activeCategory, form.category, importCategory, visibleTradeCategories]);
 
   const exportCsv = () => {
     const header = [
@@ -892,7 +985,9 @@ export default function App() {
       "Exclude From Portfolio Total",
     ];
 
-    const rows = trades.filter(isVisibleTrade).map((trade) => {
+    const rows = trades
+      .filter((trade) => isVisibleTrade(trade) && visibleTradeCategorySet.has(trade.category ?? "Swing"))
+      .map((trade) => {
       const metrics = tradeMetrics(trade);
       return [
         trade.symbol,
@@ -1389,6 +1484,43 @@ export default function App() {
         </section>
       )}
 
+      {isSectionChooserOpen && (
+        <section className="panel section-picker-panel" aria-label="Dashboard section selection">
+          <div>
+            <h2>Choose Dashboard Sections</h2>
+            <p className="meta-text">Only selected sections will appear in the add form, import menu, and dashboard tabs.</p>
+          </div>
+          <div className="section-choice-grid">
+            {TRADE_CATEGORIES.map((category) => (
+              <label key={category} className="section-choice">
+                <input
+                  type="checkbox"
+                  checked={sectionSelectionDraft.includes(category)}
+                  onChange={() => toggleSectionSelectionDraft(category)}
+                />
+                <span>{category}</span>
+              </label>
+            ))}
+          </div>
+          <div className="form-actions">
+            <button type="button" className="primary-button" onClick={() => void saveSectionSelection()} disabled={isSavingSections}>
+              {isSavingSections ? "Saving..." : "Save Sections"}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setSectionSelectionDraft(enabledTradeCategories);
+                setIsSectionChooserOpen(false);
+              }}
+              disabled={isSavingSections}
+            >
+              Cancel
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="workspace-grid">
         <form className="trade-form panel" onSubmit={handleSubmit}>
           <div className="section-heading">
@@ -1398,7 +1530,7 @@ export default function App() {
             <label>
               <span>Dashboard section</span>
               <select value={form.category} onChange={handleFormChange("category")}>
-                {TRADE_CATEGORIES.map((category) => (
+                {visibleTradeCategories.map((category) => (
                   <option key={category} value={category}>
                     {category}
                   </option>
@@ -1484,6 +1616,16 @@ export default function App() {
               : `Recalculate ${activeCategory} Recommendations`}
           </button>
           <div className="utility-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setSectionSelectionDraft(enabledTradeCategories);
+                setIsSectionChooserOpen(true);
+              }}
+            >
+              Manage Sections
+            </button>
             <button type="button" className="secondary-button" onClick={exportCsv} disabled={visibleTradeCount === 0}>Export CSV</button>
             <button
               type="button"
@@ -1516,7 +1658,7 @@ export default function App() {
               <label>
                 <span>Import into sheet</span>
                 <select value={importCategory} onChange={(event) => setImportCategory(event.target.value as TradeCategory)}>
-                  {TRADE_CATEGORIES.map((category) => (
+                  {visibleTradeCategories.map((category) => (
                     <option key={category} value={category}>
                       {category}
                     </option>
@@ -1548,7 +1690,7 @@ export default function App() {
         </div>
 
         <div className="sheet-tabs" role="tablist" aria-label="Dashboard sheets">
-          {TRADE_CATEGORIES.map((category) => (
+          {visibleTradeCategories.map((category) => (
             <button
               key={category}
               type="button"
