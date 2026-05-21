@@ -1448,19 +1448,16 @@ export default function App() {
 
   return (
     <main className="page-shell">
+      <header className="app-header">
+        <span>{user.email ?? "Signed in"}</span>
+        <button type="button" className="menu-trigger" onClick={() => setIsSideMenuOpen(true)}>
+          Menu
+        </button>
+      </header>
+
       <section className="top-band">
         <div>
-          <button type="button" className="menu-trigger" onClick={() => setIsSideMenuOpen(true)}>
-            Menu
-          </button>
-          <p className="eyebrow">Swing Trading Tracker</p>
-          <h1>Track long swing trades with live prices and risk math.</h1>
-          <p className="lede">
-            This tool is for tracking and educational purposes only and is not financial advice.
-          </p>
-          <div className="account-bar">
-            <span>{user.email ?? "Signed in"}</span>
-          </div>
+          <p className="disclaimer-text">Tracking and educational purposes only. Not financial advice.</p>
         </div>
         <div className="summary-grid">
           <article className={`summary-card ${portfolio.unrealized >= 0 ? "positive" : "negative"}`}>

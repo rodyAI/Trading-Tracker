@@ -52,6 +52,23 @@ button:disabled {
   padding: 28px 0 44px;
 }
 
+.app-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.app-header span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .top-band {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
@@ -86,6 +103,14 @@ button:disabled {
 
 .lede {
   max-width: 720px;
+}
+
+.disclaimer-text {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .panel,
@@ -267,7 +292,6 @@ label span,
 
 .menu-trigger {
   min-height: 38px;
-  margin-bottom: 12px;
   padding: 8px 13px;
   color: var(--text);
   background: var(--panel-strong);
@@ -978,6 +1002,14 @@ td small.recommendation-error {
   .top-band {
     gap: 10px;
     margin-bottom: 10px;
+  }
+
+  .app-header {
+    margin-bottom: 8px;
+  }
+
+  .disclaimer-text {
+    display: none;
   }
 
   .summary-grid {
