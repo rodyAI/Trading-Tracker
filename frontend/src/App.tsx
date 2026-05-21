@@ -727,13 +727,15 @@ export default function App() {
 
     try {
       const result = await deleteUserTrade(user, trade);
-      setTrades((currentTrades) =>
-        currentTrades.filter((currentTrade) => currentTrade.symbol.toUpperCase() !== trade.symbol.toUpperCase()),
-      );
+      await syncServerState();
       if (form.id === trade.id) setForm(emptyForm);
-      const message = `${result.symbol} delete confirmed. Deleted server doc ids: ${
-        result.matchedIds.length > 0 ? result.matchedIds.join(", ") : "none found before delete"
-      }. Remaining server ids: none.`;
+      const duplicateText =
+        result.remainingSameSymbolIds.length > 0
+          ? ` Other ${result.symbol} document ids still exist: ${result.remainingSameSymbolIds.join(", ")}.`
+          : "";
+      const message = `${result.symbol} delete confirmed from ${result.path}. Document id ${result.id} ${
+        result.existedBeforeDelete ? "was removed" : "was already absent"
+      }.${duplicateText}`;
       setDeleteResult(message);
       setStatusMessage(`${trade.symbol} delete confirmed by Firestore.`);
       window.alert(message);

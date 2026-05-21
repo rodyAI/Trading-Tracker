@@ -1,7 +1,9 @@
 import {
   collection,
   deleteField,
+  deleteDoc,
   doc,
+  getDocFromServer,
   getDocs,
   getDocsFromServer,
   onSnapshot,
@@ -13,7 +15,7 @@ import {
   type QueryDocumentSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
-import { firebaseProjectId, requireDb, type User } from "../firebase/client";
+import { requireDb, type User } from "../firebase/client";
 import type { TrackedTrade } from "../utils/tradeCalculations";
 
 const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
@@ -52,10 +54,9 @@ const derivedMarketDataFields = [
 
 const tradesCollection = (user: User) => collection(requireDb(), "users", user.uid, "trades");
 const tradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "trades", id);
+const tradePath = (user: User, id: string) => `users/${user.uid}/trades/${id}`;
 const deletedTradesCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedTrades");
-const deletedTradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "deletedTrades", id);
 const deletedSymbolsCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedSymbols");
-const deletedSymbolDoc = (user: User, symbol: string) => doc(requireDb(), "users", user.uid, "deletedSymbols", symbol);
 
 const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade => {
   const trade = stripDerivedMarketData(
@@ -106,43 +107,6 @@ const derivedMarketDataDeletes = () => ({
 const hasDerivedMarketData = (data: Record<string, unknown>) =>
   derivedMarketDataFields.some((field) => Object.prototype.hasOwnProperty.call(data, field));
 
-const firestoreDocumentUrl = (user: User, collectionName: string, documentId: string) =>
-  `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/users/${encodeURIComponent(
-    user.uid,
-  )}/${collectionName}/${encodeURIComponent(documentId)}`;
-
-const deleteDocumentViaRest = async (user: User, collectionName: string, documentId: string, idToken: string) => {
-  const response = await fetch(firestoreDocumentUrl(user, collectionName, documentId), {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-    },
-  });
-
-  if (response.ok || response.status === 404) return;
-  throw new Error(`REST delete failed for ${collectionName}/${documentId}: ${response.status} ${await response.text()}`);
-};
-
-const setDocumentViaRest = async (
-  user: User,
-  collectionName: string,
-  documentId: string,
-  idToken: string,
-  fields: Record<string, unknown>,
-) => {
-  const response = await fetch(firestoreDocumentUrl(user, collectionName, documentId), {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ fields }),
-  });
-
-  if (response.ok) return;
-  throw new Error(`REST write failed for ${collectionName}/${documentId}: ${response.status} ${await response.text()}`);
-};
-
 export interface TradePersistenceDiagnostics {
   uid: string;
   rawTrades: Array<{
@@ -158,8 +122,10 @@ export interface TradePersistenceDiagnostics {
 
 export interface DeleteTradeResult {
   symbol: string;
-  matchedIds: string[];
-  remainingIds: string[];
+  id: string;
+  path: string;
+  existedBeforeDelete: boolean;
+  remainingSameSymbolIds: string[];
 }
 
 export const loadTradePersistenceDiagnostics = async (user: User): Promise<TradePersistenceDiagnostics> => {
@@ -279,57 +245,58 @@ export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
 export const deleteUserTrade = async (user: User, trade: TrackedTrade): Promise<DeleteTradeResult> => {
   const db = requireDb();
   const symbol = trade.symbol.trim().toUpperCase();
-  const matchingTradeDocs = (await getDocsFromServer(tradesCollection(user))).docs.filter(
-    (item) => String(item.data().symbol ?? "").trim().toUpperCase() === symbol,
-  );
-  const matchedIds = matchingTradeDocs.map((item) => item.id);
-  const idToken = await user.getIdToken(true);
-  const batch = writeBatch(db);
+  const id = trade.id;
+  const path = tradePath(user, id);
+  const ref = tradeDoc(user, id);
 
-  batch.set(deletedSymbolDoc(user, symbol), {
+  console.info("Deleting trade from Firestore", {
+    uid: user.uid,
     symbol,
-    deletedAt: serverTimestamp(),
+    id,
+    path,
   });
 
-  for (const item of matchingTradeDocs) {
-    batch.set(deletedTradeDoc(user, item.id), {
-      id: item.id,
+  try {
+    const beforeSnapshot = await getDocFromServer(ref);
+    await deleteDoc(ref);
+    await waitForPendingWrites(db);
+
+    const afterSnapshot = await getDocFromServer(ref);
+    if (afterSnapshot.exists()) {
+      throw new Error(`Firestore delete did not remove ${path}. The document still exists after deleteDoc resolved.`);
+    }
+
+    const refreshedTrades = await getDocsFromServer(tradesCollection(user));
+    const remainingSameSymbolIds = refreshedTrades.docs
+      .filter((item) => String(item.data().symbol ?? "").trim().toUpperCase() === symbol)
+      .map((item) => item.id);
+
+    console.info("Firestore trade delete verified", {
+      uid: user.uid,
       symbol,
-      deletedAt: serverTimestamp(),
+      id,
+      path,
+      existedBeforeDelete: beforeSnapshot.exists(),
+      remainingSameSymbolIds,
     });
-    batch.delete(item.ref);
+
+    return {
+      symbol,
+      id,
+      path,
+      existedBeforeDelete: beforeSnapshot.exists(),
+      remainingSameSymbolIds,
+    };
+  } catch (error) {
+    console.error("Failed to delete trade from Firestore", {
+      uid: user.uid,
+      symbol,
+      id,
+      path,
+      error,
+    });
+    throw error instanceof Error ? error : new Error(`Failed to delete ${path}.`);
   }
-
-  await batch.commit();
-  await waitForPendingWrites(db);
-
-  await setDocumentViaRest(user, "deletedSymbols", symbol, idToken, {
-    symbol: { stringValue: symbol },
-  });
-  await Promise.all(
-    matchingTradeDocs.flatMap((item) => [
-      setDocumentViaRest(user, "deletedTrades", item.id, idToken, {
-        id: { stringValue: item.id },
-        symbol: { stringValue: symbol },
-      }),
-      deleteDocumentViaRest(user, "trades", item.id, idToken),
-    ]),
-  );
-
-  const refreshedTrades = await getDocsFromServer(tradesCollection(user));
-
-  const remainingIds = refreshedTrades.docs
-    .filter((item) => {
-    const data = item.data();
-    return String(data.symbol ?? "").trim().toUpperCase() === symbol;
-    })
-    .map((item) => item.id);
-
-  if (remainingIds.length > 0) {
-    throw new Error(`${symbol} still exists in Firestore after delete. Remaining document ids: ${remainingIds.join(", ")}.`);
-  }
-
-  return { symbol, matchedIds, remainingIds };
 };
 
 export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {
