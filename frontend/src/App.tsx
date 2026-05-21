@@ -674,9 +674,9 @@ export default function App() {
       excludeFromPortfolioTotals: validation.values.excludeFromPortfolioTotals,
     };
 
-    setStatusMessage("Saving trade and calculating the recommended sell price...");
-    const tradeWithRecommendation = await enrichTradeRecommendation(baseTrade);
     try {
+      setStatusMessage("Saving trade and calculating the recommended sell price...");
+      const tradeWithRecommendation = await enrichTradeRecommendation(baseTrade);
       await saveUserTrade(user, tradeWithRecommendation);
       setActiveCategory(tradeWithRecommendation.category ?? "Swing");
       setForm(emptyForm);

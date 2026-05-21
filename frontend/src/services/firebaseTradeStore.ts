@@ -18,10 +18,12 @@ import {
 import { requireDb, type User } from "../firebase/client";
 import type { TrackedTrade } from "../utils/tradeCalculations";
 
+const normalizeSymbol = (symbol: unknown) => (typeof symbol === "string" ? symbol.trim().toUpperCase() : "");
+
 const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
   ...trade,
   category: trade.category ?? "Swing",
-  symbol: trade.symbol.trim().toUpperCase(),
+  symbol: normalizeSymbol(trade.symbol),
   stopLoss: trade.stopLoss ?? null,
   takeProfit: trade.takeProfit ?? null,
   tags: trade.tags ?? [],
@@ -109,6 +111,11 @@ const derivedMarketDataDeletes = () => ({
 const hasDerivedMarketData = (data: Record<string, unknown>) =>
   derivedMarketDataFields.some((field) => Object.prototype.hasOwnProperty.call(data, field));
 
+const assertPersistableTrade = (trade: TrackedTrade, action: string) => {
+  if (!trade.id) throw new Error(`Cannot ${action} trade because it is missing a document id.`);
+  if (!trade.symbol) throw new Error(`Cannot ${action} trade because it is missing a ticker symbol.`);
+};
+
 export interface TradePersistenceDiagnostics {
   uid: string;
   rawTrades: Array<{
@@ -167,7 +174,7 @@ export const loadUserTradesFromServer = async (user: User) => {
   return tradeSnapshot.docs
     .filter((item) => {
       const data = item.data();
-      return data.isDeleted !== true;
+      return data.isDeleted !== true && normalizeSymbol(data.symbol);
     })
     .map((item) => fromFirestore(item.id, item.data()))
     .sort((left, right) => left.symbol.localeCompare(right.symbol));
@@ -187,6 +194,7 @@ export const subscribeToUserTrades = (
       (item) =>
         item &&
         item.data().isDeleted !== true &&
+        normalizeSymbol(item.data().symbol) &&
         hasDerivedMarketData(item.data()),
     );
     if (staleDocs.length > 0) {
@@ -198,7 +206,7 @@ export const subscribeToUserTrades = (
     }
 
     const trades = latestTradeDocs
-      .filter((item) => item && item.data().isDeleted !== true)
+      .filter((item) => item && item.data().isDeleted !== true && normalizeSymbol(item.data().symbol))
       .map((item) => fromFirestore(item.id, item.data()))
       .sort((left, right) => left.symbol.localeCompare(right.symbol));
     onNext(trades);
@@ -221,6 +229,7 @@ export const subscribeToUserTrades = (
 export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
   const db = requireDb();
   const normalizedTrade = stripDerivedMarketData(normalizeTrade(trade));
+  assertPersistableTrade(normalizedTrade, "save");
   const ref = tradeDoc(user, normalizedTrade.id);
   const batch = writeBatch(db);
 
@@ -244,8 +253,10 @@ export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
 
 export const deleteUserTrade = async (user: User, trade: TrackedTrade): Promise<DeleteTradeResult> => {
   const db = requireDb();
-  const symbol = trade.symbol.trim().toUpperCase();
+  const symbol = normalizeSymbol(trade.symbol);
   const id = trade.id;
+  if (!symbol) throw new Error("Cannot delete trade because it is missing a ticker symbol.");
+  if (!id) throw new Error("Cannot delete trade because it is missing a document id.");
   const path = tradePath(user, id);
   const ref = tradeDoc(user, id);
 
@@ -301,7 +312,9 @@ export const deleteUserTrade = async (user: User, trade: TrackedTrade): Promise<
 
 export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {
   const batch = writeBatch(requireDb());
-  const normalizedTrades = trades.map((trade) => stripDerivedMarketData(normalizeTrade(trade)));
+  const normalizedTrades = trades
+    .map((trade) => stripDerivedMarketData(normalizeTrade(trade)))
+    .filter((trade) => trade.id && trade.symbol);
 
   for (const trade of normalizedTrades) {
     batch.set(tradeDoc(user, trade.id), { ...toFirestore(trade), isDeleted: false, createdAt: serverTimestamp() });
@@ -317,7 +330,9 @@ export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {
 export const replaceUserTrades = async (user: User, trades: TrackedTrade[]) => {
   const existingTrades = await getDocs(tradesCollection(user));
   const batch = writeBatch(requireDb());
-  const normalizedTrades = trades.map((trade) => stripDerivedMarketData(normalizeTrade(trade)));
+  const normalizedTrades = trades
+    .map((trade) => stripDerivedMarketData(normalizeTrade(trade)))
+    .filter((trade) => trade.id && trade.symbol);
 
   for (const item of existingTrades.docs) {
     batch.delete(item.ref);
