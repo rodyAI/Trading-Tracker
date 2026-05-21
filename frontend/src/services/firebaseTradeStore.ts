@@ -56,7 +56,9 @@ const tradesCollection = (user: User) => collection(requireDb(), "users", user.u
 const tradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "trades", id);
 const tradePath = (user: User, id: string) => `users/${user.uid}/trades/${id}`;
 const deletedTradesCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedTrades");
+const deletedTradeDoc = (user: User, id: string) => doc(requireDb(), "users", user.uid, "deletedTrades", id);
 const deletedSymbolsCollection = (user: User) => collection(requireDb(), "users", user.uid, "deletedSymbols");
+const deletedSymbolDoc = (user: User, symbol: string) => doc(requireDb(), "users", user.uid, "deletedSymbols", symbol);
 
 const fromFirestore = (id: string, data: Record<string, unknown>): TrackedTrade => {
   const trade = stripDerivedMarketData(
@@ -153,26 +155,19 @@ export const loadTradePersistenceDiagnostics = async (user: User): Promise<Trade
     deletedTradeIds: [...deletedTradeIds].sort(),
     deletedSymbols: [...deletedSymbols].sort(),
     visibleTradeIds: rawTrades
-      .filter((trade) => !trade.isDeleted && !trade.hasDeletedMarker)
+      .filter((trade) => !trade.isDeleted)
       .map((trade) => trade.id)
       .sort(),
   };
 };
 
 export const loadUserTradesFromServer = async (user: User) => {
-  const [tradeSnapshot, deletedSnapshot, deletedSymbolSnapshot] = await Promise.all([
-    getDocsFromServer(tradesCollection(user)),
-    getDocsFromServer(deletedTradesCollection(user)),
-    getDocsFromServer(deletedSymbolsCollection(user)),
-  ]);
-  const deletedTradeIds = new Set(deletedSnapshot.docs.map((item) => item.id));
-  const deletedSymbols = new Set(deletedSymbolSnapshot.docs.map((item) => item.id.toUpperCase()));
+  const tradeSnapshot = await getDocsFromServer(tradesCollection(user));
 
   return tradeSnapshot.docs
     .filter((item) => {
       const data = item.data();
-      const symbol = typeof data.symbol === "string" ? data.symbol.toUpperCase() : "";
-      return data.isDeleted !== true && !deletedTradeIds.has(item.id) && !deletedSymbols.has(symbol);
+      return data.isDeleted !== true;
     })
     .map((item) => fromFirestore(item.id, item.data()))
     .sort((left, right) => left.symbol.localeCompare(right.symbol));
@@ -184,16 +179,14 @@ export const subscribeToUserTrades = (
   onError: (error: Error) => void,
 ): Unsubscribe => {
   let latestTradeDocs: QueryDocumentSnapshot<DocumentData>[] | null = null;
-  let latestDeletedTradeIds: Set<string> | null = null;
 
   const emitVisibleTrades = () => {
-    if (!latestTradeDocs || !latestDeletedTradeIds) return;
+    if (!latestTradeDocs) return;
 
     const staleDocs = latestTradeDocs.filter(
       (item) =>
         item &&
         item.data().isDeleted !== true &&
-        !latestDeletedTradeIds?.has(item.id) &&
         hasDerivedMarketData(item.data()),
     );
     if (staleDocs.length > 0) {
@@ -205,7 +198,7 @@ export const subscribeToUserTrades = (
     }
 
     const trades = latestTradeDocs
-      .filter((item) => item && item.data().isDeleted !== true && !latestDeletedTradeIds?.has(item.id))
+      .filter((item) => item && item.data().isDeleted !== true)
       .map((item) => fromFirestore(item.id, item.data()))
       .sort((left, right) => left.symbol.localeCompare(right.symbol));
     onNext(trades);
@@ -220,26 +213,23 @@ export const subscribeToUserTrades = (
     onError,
   );
 
-  const unsubscribeDeletedTrades = onSnapshot(
-    deletedTradesCollection(user),
-    (snapshot) => {
-      latestDeletedTradeIds = new Set(snapshot.docs.map((item) => item.id));
-      emitVisibleTrades();
-    },
-    onError,
-  );
-
   return () => {
     unsubscribeTrades();
-    unsubscribeDeletedTrades();
   };
 };
 
 export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
   const db = requireDb();
-  await setDoc(tradeDoc(user, trade.id), toFirestore(trade));
+  const normalizedTrade = stripDerivedMarketData(normalizeTrade(trade));
+  const batch = writeBatch(db);
+
+  batch.set(tradeDoc(user, normalizedTrade.id), toFirestore(normalizedTrade));
+  batch.delete(deletedTradeDoc(user, normalizedTrade.id));
+  batch.delete(deletedSymbolDoc(user, normalizedTrade.symbol));
+
+  await batch.commit();
   await waitForPendingWrites(db);
-  return stripDerivedMarketData(normalizeTrade(trade));
+  return normalizedTrade;
 };
 
 export const deleteUserTrade = async (user: User, trade: TrackedTrade): Promise<DeleteTradeResult> => {
@@ -305,6 +295,8 @@ export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {
 
   for (const trade of normalizedTrades) {
     batch.set(tradeDoc(user, trade.id), { ...toFirestore(trade), createdAt: serverTimestamp() });
+    batch.delete(deletedTradeDoc(user, trade.id));
+    batch.delete(deletedSymbolDoc(user, trade.symbol));
   }
 
   await batch.commit();
@@ -323,6 +315,8 @@ export const replaceUserTrades = async (user: User, trades: TrackedTrade[]) => {
 
   for (const trade of normalizedTrades) {
     batch.set(tradeDoc(user, trade.id), toFirestore(trade));
+    batch.delete(deletedTradeDoc(user, trade.id));
+    batch.delete(deletedSymbolDoc(user, trade.symbol));
   }
 
   await batch.commit();
