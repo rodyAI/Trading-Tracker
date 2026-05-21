@@ -1484,43 +1484,6 @@ export default function App() {
         </section>
       )}
 
-      {isSectionChooserOpen && (
-        <section className="panel section-picker-panel" aria-label="Dashboard section selection">
-          <div>
-            <h2>Choose Dashboard Sections</h2>
-            <p className="meta-text">Only selected sections will appear in the add form, import menu, and dashboard tabs.</p>
-          </div>
-          <div className="section-choice-grid">
-            {TRADE_CATEGORIES.map((category) => (
-              <label key={category} className="section-choice">
-                <input
-                  type="checkbox"
-                  checked={sectionSelectionDraft.includes(category)}
-                  onChange={() => toggleSectionSelectionDraft(category)}
-                />
-                <span>{category}</span>
-              </label>
-            ))}
-          </div>
-          <div className="form-actions">
-            <button type="button" className="primary-button" onClick={() => void saveSectionSelection()} disabled={isSavingSections}>
-              {isSavingSections ? "Saving..." : "Save Sections"}
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                setSectionSelectionDraft(enabledTradeCategories);
-                setIsSectionChooserOpen(false);
-              }}
-              disabled={isSavingSections}
-            >
-              Cancel
-            </button>
-          </div>
-        </section>
-      )}
-
       <section className="workspace-grid">
         <form className="trade-form panel" onSubmit={handleSubmit}>
           <div className="section-heading">
@@ -1624,7 +1587,7 @@ export default function App() {
                 setIsSectionChooserOpen(true);
               }}
             >
-              Manage Sections
+              Manage Selections
             </button>
             <button type="button" className="secondary-button" onClick={exportCsv} disabled={visibleTradeCount === 0}>Export CSV</button>
             <button
@@ -1653,6 +1616,42 @@ export default function App() {
               }}
             />
           </div>
+          {isSectionChooserOpen && (
+            <div className="section-picker-panel" aria-label="Dashboard section selection">
+              <div>
+                <h2>Choose Dashboard Sections</h2>
+                <p className="meta-text">Only selected sections will appear in the add form, import menu, and dashboard tabs.</p>
+              </div>
+              <div className="section-choice-grid">
+                {TRADE_CATEGORIES.map((category) => (
+                  <label key={category} className="section-choice">
+                    <input
+                      type="checkbox"
+                      checked={sectionSelectionDraft.includes(category)}
+                      onChange={() => toggleSectionSelectionDraft(category)}
+                    />
+                    <span>{category}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="form-actions">
+                <button type="button" className="primary-button" onClick={() => void saveSectionSelection()} disabled={isSavingSections}>
+                  {isSavingSections ? "Saving..." : "Save Selections"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setSectionSelectionDraft(enabledTradeCategories);
+                    setIsSectionChooserOpen(false);
+                  }}
+                  disabled={isSavingSections}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           {isImportChooserOpen && (
             <div className="import-panel">
               <label>

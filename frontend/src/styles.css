@@ -156,7 +156,10 @@ label span,
 .section-picker-panel {
   display: grid;
   gap: 16px;
-  margin-bottom: 20px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .section-picker-panel h2 {
