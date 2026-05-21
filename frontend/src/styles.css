@@ -105,6 +105,15 @@ button:disabled {
   max-width: 720px;
 }
 
+.tool-summary {
+  max-width: 640px;
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
 .disclaimer-text {
   max-width: 520px;
   margin: 0;
@@ -1008,8 +1017,15 @@ td small.recommendation-error {
     margin-bottom: 8px;
   }
 
+  .tool-summary {
+    margin-bottom: 4px;
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+
   .disclaimer-text {
-    display: none;
+    font-size: 0.68rem;
+    line-height: 1.25;
   }
 
   .summary-grid {

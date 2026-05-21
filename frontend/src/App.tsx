@@ -1457,7 +1457,10 @@ export default function App() {
 
       <section className="top-band">
         <div>
-          <p className="disclaimer-text">Tracking and educational purposes only. Not financial advice.</p>
+          <p className="tool-summary">
+            Track positions, live prices, unrealized P/L, risk levels, and sell targets across your selected strategies.
+          </p>
+          <p className="disclaimer-text">Educational tracking only. Not financial advice.</p>
         </div>
         <div className="summary-grid">
           <article className={`summary-card ${portfolio.unrealized >= 0 ? "positive" : "negative"}`}>
