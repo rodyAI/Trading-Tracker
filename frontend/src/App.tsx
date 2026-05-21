@@ -1587,6 +1587,9 @@ export default function App() {
                 <p className="eyebrow">Menu</p>
                 <h2>Controls</h2>
               </div>
+              <button type="button" className="side-menu-close" onClick={() => setIsSideMenuOpen(false)} aria-label="Close menu">
+                ×
+              </button>
             </div>
 
             <div className="side-menu-body">
@@ -1707,9 +1710,6 @@ export default function App() {
             </div>
 
             <div className="side-menu-footer">
-              <button type="button" className="secondary-button" onClick={() => setIsSideMenuOpen(false)}>
-                Close
-              </button>
               <button type="button" className="danger-button secondary-button" onClick={() => void signOutCurrentUser()}>
                 Log Out
               </button>
