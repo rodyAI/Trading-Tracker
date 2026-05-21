@@ -953,15 +953,32 @@ td small.recommendation-error {
     line-height: 1.35;
   }
 
-  .section-choice-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .utility-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 7px;
+    width: 100%;
+  }
+
+  .utility-actions .secondary-button {
+    min-width: 0;
+    padding: 7px 5px;
+    overflow: hidden;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .section-choice-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .section-choice {
-    gap: 7px;
-    min-height: 38px;
-    padding: 7px 8px;
+    gap: 5px;
+    min-height: 34px;
+    padding: 6px;
   }
 
   .section-choice input {
@@ -972,7 +989,7 @@ td small.recommendation-error {
 
   .section-choice span {
     overflow: hidden;
-    font-size: 0.78rem;
+    font-size: 0.68rem;
     font-weight: 800;
     line-height: 1.15;
     text-overflow: ellipsis;
