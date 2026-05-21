@@ -1559,15 +1559,19 @@ export default function App() {
               type="button"
               role="tab"
               aria-selected={activeCategory === category}
-              className={activeCategory === category ? "active" : ""}
+              className={`${activeCategory === category ? "active" : ""} ${
+                excludedPortfolioCategorySet.has(category) ? "excluded" : ""
+              }`}
               onClick={() => setActiveCategory(category)}
+              aria-label={`${category}: ${formatCurrency(categorySummaries[category].totalProfitLoss)}, ${formatPercent(
+                categorySummaries[category].totalProfitLossPercent,
+              )}${excludedPortfolioCategorySet.has(category) ? ", excluded from total portfolio P/L" : ""}`}
             >
-              <span>{category}</span>
-              <strong>{numberFormatter.format(tradesByCategory[category].length)}</strong>
-              <small>
+              <span className="tab-title">{category}</span>
+              <strong className="tab-count">{numberFormatter.format(tradesByCategory[category].length)}</strong>
+              <small className="tab-pl">
                 {formatCurrency(categorySummaries[category].totalProfitLoss)} /{" "}
                 {formatPercent(categorySummaries[category].totalProfitLossPercent)}
-                {excludedPortfolioCategorySet.has(category) ? " · excluded" : ""}
               </small>
             </button>
           ))}

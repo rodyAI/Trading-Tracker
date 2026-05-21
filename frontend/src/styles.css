@@ -447,7 +447,7 @@ textarea {
   white-space: nowrap;
 }
 
-.sheet-tabs button span {
+.sheet-tabs button .tab-title {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -459,7 +459,7 @@ textarea {
   box-shadow: inset 0 3px 0 var(--accent);
 }
 
-.sheet-tabs button strong {
+.sheet-tabs button .tab-count {
   display: inline-grid;
   place-items: center;
   min-width: 26px;
@@ -471,10 +471,27 @@ textarea {
   font-size: 0.78rem;
 }
 
-.sheet-tabs button small {
+.sheet-tabs button .tab-pl {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.sheet-tabs button.excluded {
+  border-color: rgba(245, 185, 76, 0.42);
+}
+
+.sheet-tabs button.excluded .tab-title::after {
+  content: "Excluded";
+  display: inline-block;
+  margin-left: 7px;
+  padding: 2px 6px;
+  color: #281803;
+  background: var(--warning);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 900;
+  vertical-align: middle;
 }
 
 .dashboard-sheet {
@@ -1002,23 +1019,107 @@ td small.recommendation-error {
   }
 
   .sheet-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+    overflow: visible;
     margin-bottom: 10px;
+    padding: 0;
+    border-bottom: 0;
   }
 
   .sheet-tabs button {
-    min-width: 170px;
-    min-height: 40px;
-    padding: 8px 10px;
+    grid-template-columns: 1fr;
+    gap: 2px;
+    min-width: 0;
+    min-height: 58px;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    white-space: normal;
+    text-align: left;
+  }
+
+  .sheet-tabs button.active {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .sheet-tabs button .tab-title {
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1.15;
+  }
+
+  .sheet-tabs button .tab-count {
+    display: none;
+  }
+
+  .sheet-tabs button .tab-pl {
+    grid-column: auto;
+    display: block;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 0.76rem;
+    font-weight: 800;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sheet-tabs button.excluded .tab-title::after {
+    width: 7px;
+    height: 7px;
+    margin-left: 6px;
+    padding: 0;
+    color: transparent;
+    font-size: 0;
+    vertical-align: 1px;
   }
 
   .dashboard-section-header {
     display: grid;
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(112px, auto);
+    gap: 8px 10px;
+    align-items: start;
+  }
+
+  .dashboard-section-header > div:first-child {
+    min-width: 0;
+  }
+
+  .dashboard-section-header h3 {
+    font-size: 1rem;
+  }
+
+  .dashboard-section-header span {
+    display: block;
+    font-size: 0.76rem;
+    line-height: 1.35;
+  }
+
+  .section-total-toggle {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 34px;
+    margin-top: 0;
   }
 
   .sheet-pl {
-    justify-items: start;
+    justify-items: end;
     min-width: 0;
+  }
+
+  .sheet-pl span {
+    font-size: 0.7rem;
+  }
+
+  .sheet-pl strong {
+    font-size: 0.95rem;
+  }
+
+  .sheet-pl small {
+    font-size: 0.72rem;
   }
 
   .results-toolbar {
