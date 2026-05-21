@@ -239,6 +239,7 @@ export default function App() {
   const [isSectionChooserOpen, setIsSectionChooserOpen] = useState(false);
   const [isSavingSections, setIsSavingSections] = useState(false);
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
+  const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
   const [persistenceDiagnostics, setPersistenceDiagnostics] = useState("");
@@ -273,7 +274,10 @@ export default function App() {
     setExcludedPortfolioCategories(serverSettings.excludedCategories);
     setEnabledTradeCategories(serverSettings.enabledCategories);
     setSectionSelectionDraft(serverSettings.enabledCategories);
-    if (!serverSettings.exists) setIsSectionChooserOpen(true);
+    if (!serverSettings.exists) {
+      setIsSectionChooserOpen(true);
+      setIsSideMenuOpen(true);
+    }
     cacheExcludedCategories(user, serverSettings.excludedCategories);
     setLastServerSync(new Date().toLocaleTimeString());
   }, [user]);
@@ -292,6 +296,7 @@ export default function App() {
       setEnabledTradeCategories([...TRADE_CATEGORIES]);
       setSectionSelectionDraft([...TRADE_CATEGORIES]);
       setIsSectionChooserOpen(false);
+      setIsSideMenuOpen(false);
       setIsLoadingTrades(false);
       initialRefreshUserRef.current = null;
       setStatusMessage("Sign in to load your trades.");
@@ -684,6 +689,7 @@ export default function App() {
         savedSettings.enabledCategories.includes(current) ? current : savedSettings.enabledCategories[0],
       );
       setIsSectionChooserOpen(false);
+      setIsSideMenuOpen(false);
       setStatusMessage("Dashboard sections saved.");
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Failed to save dashboard sections.");
@@ -1556,15 +1562,6 @@ export default function App() {
           <div className="section-heading">
             <h2>Controls</h2>
           </div>
-          <label>
-            <span>Market data source</span>
-            <select value={provider} onChange={(event) => setProvider(event.target.value as MarketDataProviderId)}>
-              <option value="yahoo">Yahoo-compatible browser endpoint</option>
-            </select>
-          </label>
-          <p className="meta-text">
-            Prices are fetched through the market-data Worker when configured, with browser fallbacks for local static builds. Prices are never mocked.
-          </p>
           <button type="button" className="primary-button full-width" onClick={() => void refreshPrices()} disabled={isRefreshing}>
             {isRefreshing ? "Refreshing..." : "Refresh Prices"}
           </button>
@@ -1578,100 +1575,143 @@ export default function App() {
               ? `Recalculating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? activeTrades.length}...`
               : `Recalculate ${activeCategory} Recommendations`}
           </button>
-          <div className="utility-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                setSectionSelectionDraft(enabledTradeCategories);
-                setIsSectionChooserOpen(true);
-              }}
-            >
-              Manage Selections
-            </button>
-            <button type="button" className="secondary-button" onClick={exportCsv} disabled={visibleTradeCount === 0}>Export CSV</button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                setImportCategory(activeCategory);
-                setIsImportChooserOpen((current) => !current);
-              }}
-            >
-              Import CSV
-            </button>
-            <input
-              ref={fileInputRef}
-              className="hidden-input"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) {
-                  void importCsv(file, importCategory).catch((error) => {
-                    setGlobalError(error instanceof Error ? error.message : "Failed to import CSV.");
-                  });
-                }
-                event.target.value = "";
-              }}
-            />
-          </div>
-          {isSectionChooserOpen && (
-            <div className="section-picker-panel" aria-label="Dashboard section selection">
+          <button type="button" className="secondary-button full-width" onClick={() => setIsSideMenuOpen(true)}>
+            More Controls
+          </button>
+          {globalError && <p className="error-text">{globalError}</p>}
+        </section>
+      </section>
+
+      {isSideMenuOpen && (
+        <div className="side-menu-backdrop" role="presentation" onClick={() => setIsSideMenuOpen(false)}>
+          <aside className="side-menu" aria-label="Additional controls" onClick={(event) => event.stopPropagation()}>
+            <div className="side-menu-header">
               <div>
-                <h2>Choose Dashboard Sections</h2>
-                <p className="meta-text">Only selected sections will appear in the add form, import menu, and dashboard tabs.</p>
+                <p className="eyebrow">Controls</p>
+                <h2>More Controls</h2>
               </div>
-              <div className="section-choice-grid">
-                {TRADE_CATEGORIES.map((category) => (
-                  <label key={category} className="section-choice">
-                    <input
-                      type="checkbox"
-                      checked={sectionSelectionDraft.includes(category)}
-                      onChange={() => toggleSectionSelectionDraft(category)}
-                    />
-                    <span>{category}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="form-actions">
-                <button type="button" className="primary-button" onClick={() => void saveSectionSelection()} disabled={isSavingSections}>
-                  {isSavingSections ? "Saving..." : "Save Selections"}
-                </button>
+              <button type="button" className="icon-button" onClick={() => setIsSideMenuOpen(false)} aria-label="Close controls menu">
+                Close
+              </button>
+            </div>
+
+            <section className="side-menu-section">
+              <h3>Market Data</h3>
+              <label>
+                <span>Data source</span>
+                <select value={provider} onChange={(event) => setProvider(event.target.value as MarketDataProviderId)}>
+                  <option value="yahoo">Yahoo-compatible Worker endpoint</option>
+                  <option value="alphavantage">Alpha Vantage via Worker</option>
+                </select>
+              </label>
+              <p className="meta-text">
+                This source is used for price refreshes and candle data. Prices are never mocked.
+              </p>
+            </section>
+
+            <section className="side-menu-section">
+              <h3>Dashboard Sections</h3>
+              <button
+                type="button"
+                className="secondary-button full-width"
+                onClick={() => {
+                  setSectionSelectionDraft(enabledTradeCategories);
+                  setIsSectionChooserOpen((current) => !current);
+                  setIsImportChooserOpen(false);
+                }}
+              >
+                Manage Selections
+              </button>
+              {isSectionChooserOpen && (
+                <div className="section-picker-panel" aria-label="Dashboard section selection">
+                  <div>
+                    <h2>Choose Dashboard Sections</h2>
+                    <p className="meta-text">Only selected sections appear in the add form, import menu, and dashboard tabs.</p>
+                  </div>
+                  <div className="section-choice-grid">
+                    {TRADE_CATEGORIES.map((category) => (
+                      <label key={category} className="section-choice">
+                        <input
+                          type="checkbox"
+                          checked={sectionSelectionDraft.includes(category)}
+                          onChange={() => toggleSectionSelectionDraft(category)}
+                        />
+                        <span>{category}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="form-actions">
+                    <button type="button" className="primary-button" onClick={() => void saveSectionSelection()} disabled={isSavingSections}>
+                      {isSavingSections ? "Saving..." : "Save Selections"}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setSectionSelectionDraft(enabledTradeCategories);
+                        setIsSectionChooserOpen(false);
+                      }}
+                      disabled={isSavingSections}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="side-menu-section">
+              <h3>CSV</h3>
+              <div className="side-menu-actions">
+                <button type="button" className="secondary-button" onClick={exportCsv} disabled={visibleTradeCount === 0}>Export CSV</button>
                 <button
                   type="button"
                   className="secondary-button"
                   onClick={() => {
-                    setSectionSelectionDraft(enabledTradeCategories);
+                    setImportCategory(activeCategory);
+                    setIsImportChooserOpen((current) => !current);
                     setIsSectionChooserOpen(false);
                   }}
-                  disabled={isSavingSections}
                 >
-                  Cancel
+                  Import CSV
                 </button>
               </div>
-            </div>
-          )}
-          {isImportChooserOpen && (
-            <div className="import-panel">
-              <label>
-                <span>Import into sheet</span>
-                <select value={importCategory} onChange={(event) => setImportCategory(event.target.value as TradeCategory)}>
-                  {visibleTradeCategories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button type="button" className="primary-button full-width" onClick={() => fileInputRef.current?.click()}>
-                Choose CSV
-              </button>
-            </div>
-          )}
-          {globalError && <p className="error-text">{globalError}</p>}
-        </section>
-      </section>
+              <input
+                ref={fileInputRef}
+                className="hidden-input"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importCsv(file, importCategory).catch((error) => {
+                      setGlobalError(error instanceof Error ? error.message : "Failed to import CSV.");
+                    });
+                  }
+                  event.target.value = "";
+                }}
+              />
+              {isImportChooserOpen && (
+                <div className="import-panel">
+                  <label>
+                    <span>Import into sheet</span>
+                    <select value={importCategory} onChange={(event) => setImportCategory(event.target.value as TradeCategory)}>
+                      {visibleTradeCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" className="primary-button full-width" onClick={() => fileInputRef.current?.click()}>
+                    Choose CSV
+                  </button>
+                </div>
+              )}
+            </section>
+          </aside>
+        </div>
+      )}
 
       <section className="panel dashboard-panel">
         <div className="results-toolbar">
