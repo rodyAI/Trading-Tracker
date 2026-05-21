@@ -317,6 +317,28 @@ label span,
   margin-bottom: 16px;
 }
 
+.disclosure-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0;
+}
+
+.disclosure-button {
+  min-height: 34px;
+  padding: 7px 11px;
+  color: var(--accent-strong);
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-weight: 900;
+}
+
+.trade-form-fields {
+  margin-top: 16px;
+}
+
 .section-heading h2,
 .results-toolbar h2,
 .card-heading h3 {

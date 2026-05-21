@@ -240,6 +240,7 @@ export default function App() {
   const [isSavingSections, setIsSavingSections] = useState(false);
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
+  const [isTradeFormOpen, setIsTradeFormOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
   const [persistenceDiagnostics, setPersistenceDiagnostics] = useState("");
@@ -754,6 +755,7 @@ export default function App() {
       await saveUserTrade(user, tradeWithRecommendation);
       setActiveCategory(tradeWithRecommendation.category ?? "Swing");
       setForm(emptyForm);
+      setIsTradeFormOpen(false);
       await syncServerState();
       setStatusMessage(`${tradeWithRecommendation.symbol} saved and confirmed by Firestore.`);
     } catch (error) {
@@ -778,6 +780,7 @@ export default function App() {
     });
     setFormErrors({});
     setActiveCategory(trade.category ?? "Swing");
+    setIsTradeFormOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -878,6 +881,7 @@ export default function App() {
   const handleCancelEdit = () => {
     setForm(emptyForm);
     setFormErrors({});
+    setIsTradeFormOpen(false);
   };
 
   const handleSort = (nextKey: SortKey) => {
@@ -1492,70 +1496,83 @@ export default function App() {
 
       <section className="workspace-grid">
         <form className="trade-form panel" onSubmit={handleSubmit}>
-          <div className="section-heading">
+          <div className="section-heading disclosure-heading">
             <h2>{form.id ? "Edit Trade" : "Add Trade"}</h2>
+            <button
+              type="button"
+              className="disclosure-button"
+              onClick={() => setIsTradeFormOpen((current) => !current)}
+              aria-expanded={isTradeFormOpen}
+              aria-controls="trade-form-fields"
+            >
+              {isTradeFormOpen ? "Hide" : "Expand"}
+            </button>
           </div>
-          <div className="form-grid">
-            <label>
-              <span>Dashboard section</span>
-              <select value={form.category} onChange={handleFormChange("category")}>
-                {visibleTradeCategories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Ticker / symbol</span>
-              <input value={form.symbol} onChange={handleFormChange("symbol")} placeholder="AAPL" />
-              {formErrors.symbol && <small className="field-error">{formErrors.symbol}</small>}
-            </label>
-            <label>
-              <span>Quantity</span>
-              <input type="number" min="0" step="1" value={form.quantity} onChange={handleFormChange("quantity")} placeholder="100" />
-              {formErrors.quantity && <small className="field-error">{formErrors.quantity}</small>}
-            </label>
-            <label>
-              <span>Entry price</span>
-              <input type="number" min="0" step="0.01" value={form.entryPrice} onChange={handleFormChange("entryPrice")} placeholder="125.00" />
-              {formErrors.entryPrice && <small className="field-error">{formErrors.entryPrice}</small>}
-            </label>
-            <label>
-              <span>Stop loss optional</span>
-              <input type="number" min="0" step="0.01" value={form.stopLoss} onChange={handleFormChange("stopLoss")} placeholder="Optional" />
-              {formErrors.stopLoss && <small className="field-error">{formErrors.stopLoss}</small>}
-            </label>
-            <label>
-              <span>Take profit optional</span>
-              <input type="number" min="0" step="0.01" value={form.takeProfit} onChange={handleFormChange("takeProfit")} placeholder="Leave blank for recommendation" />
-              {formErrors.takeProfit && <small className="field-error">{formErrors.takeProfit}</small>}
-            </label>
-            <label>
-              <span>Entry date</span>
-              <input type="date" value={form.entryDate} onChange={handleFormChange("entryDate")} />
-            </label>
-          </div>
-          <label className="wide-field">
-            <span>Tags</span>
-            <input value={form.tags} onChange={handleFormChange("tags")} placeholder="breakout, pullback, high risk" />
-          </label>
-          <label className="wide-field">
-            <span>Notes</span>
-            <textarea value={form.notes} onChange={handleFormChange("notes")} rows={3} placeholder="Setup, catalyst, invalidation, earnings notes..." />
-          </label>
-          <label className="checkbox-field wide-field">
-            <input
-              type="checkbox"
-              checked={form.excludeFromPortfolioTotals}
-              onChange={handleFormCheckedChange("excludeFromPortfolioTotals")}
-            />
-            <span>Exclude this stock from portfolio total P/L</span>
-          </label>
-          <div className="form-actions">
-            <button type="submit" className="primary-button">{form.id ? "Save Changes" : "Add Trade"}</button>
-            {form.id && <button type="button" className="secondary-button" onClick={handleCancelEdit}>Cancel</button>}
-          </div>
+          {isTradeFormOpen && (
+            <div id="trade-form-fields" className="trade-form-fields">
+              <div className="form-grid">
+                <label>
+                  <span>Dashboard section</span>
+                  <select value={form.category} onChange={handleFormChange("category")}>
+                    {visibleTradeCategories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Ticker / symbol</span>
+                  <input value={form.symbol} onChange={handleFormChange("symbol")} placeholder="AAPL" />
+                  {formErrors.symbol && <small className="field-error">{formErrors.symbol}</small>}
+                </label>
+                <label>
+                  <span>Quantity</span>
+                  <input type="number" min="0" step="1" value={form.quantity} onChange={handleFormChange("quantity")} placeholder="100" />
+                  {formErrors.quantity && <small className="field-error">{formErrors.quantity}</small>}
+                </label>
+                <label>
+                  <span>Entry price</span>
+                  <input type="number" min="0" step="0.01" value={form.entryPrice} onChange={handleFormChange("entryPrice")} placeholder="125.00" />
+                  {formErrors.entryPrice && <small className="field-error">{formErrors.entryPrice}</small>}
+                </label>
+                <label>
+                  <span>Stop loss optional</span>
+                  <input type="number" min="0" step="0.01" value={form.stopLoss} onChange={handleFormChange("stopLoss")} placeholder="Optional" />
+                  {formErrors.stopLoss && <small className="field-error">{formErrors.stopLoss}</small>}
+                </label>
+                <label>
+                  <span>Take profit optional</span>
+                  <input type="number" min="0" step="0.01" value={form.takeProfit} onChange={handleFormChange("takeProfit")} placeholder="Leave blank for recommendation" />
+                  {formErrors.takeProfit && <small className="field-error">{formErrors.takeProfit}</small>}
+                </label>
+                <label>
+                  <span>Entry date</span>
+                  <input type="date" value={form.entryDate} onChange={handleFormChange("entryDate")} />
+                </label>
+              </div>
+              <label className="wide-field">
+                <span>Tags</span>
+                <input value={form.tags} onChange={handleFormChange("tags")} placeholder="breakout, pullback, high risk" />
+              </label>
+              <label className="wide-field">
+                <span>Notes</span>
+                <textarea value={form.notes} onChange={handleFormChange("notes")} rows={3} placeholder="Setup, catalyst, invalidation, earnings notes..." />
+              </label>
+              <label className="checkbox-field wide-field">
+                <input
+                  type="checkbox"
+                  checked={form.excludeFromPortfolioTotals}
+                  onChange={handleFormCheckedChange("excludeFromPortfolioTotals")}
+                />
+                <span>Exclude this stock from portfolio total P/L</span>
+              </label>
+              <div className="form-actions">
+                <button type="submit" className="primary-button">{form.id ? "Save Changes" : "Add Trade"}</button>
+                {form.id && <button type="button" className="secondary-button" onClick={handleCancelEdit}>Cancel</button>}
+              </div>
+            </div>
+          )}
         </form>
 
         <section className="panel control-panel">
