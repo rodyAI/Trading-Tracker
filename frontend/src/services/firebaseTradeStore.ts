@@ -221,14 +221,24 @@ export const subscribeToUserTrades = (
 export const saveUserTrade = async (user: User, trade: TrackedTrade) => {
   const db = requireDb();
   const normalizedTrade = stripDerivedMarketData(normalizeTrade(trade));
+  const ref = tradeDoc(user, normalizedTrade.id);
   const batch = writeBatch(db);
 
-  batch.set(tradeDoc(user, normalizedTrade.id), toFirestore(normalizedTrade));
+  batch.set(ref, { ...toFirestore(normalizedTrade), isDeleted: false });
   batch.delete(deletedTradeDoc(user, normalizedTrade.id));
   batch.delete(deletedSymbolDoc(user, normalizedTrade.symbol));
 
   await batch.commit();
   await waitForPendingWrites(db);
+
+  const savedSnapshot = await getDocFromServer(ref);
+  if (!savedSnapshot.exists()) {
+    throw new Error(`Firestore did not confirm saving ${normalizedTrade.symbol} at ${tradePath(user, normalizedTrade.id)}.`);
+  }
+  if (savedSnapshot.data().isDeleted === true) {
+    throw new Error(`${normalizedTrade.symbol} was saved but is still marked deleted in Firestore.`);
+  }
+
   return normalizedTrade;
 };
 
@@ -294,7 +304,7 @@ export const importUserTrades = async (user: User, trades: TrackedTrade[]) => {
   const normalizedTrades = trades.map((trade) => stripDerivedMarketData(normalizeTrade(trade)));
 
   for (const trade of normalizedTrades) {
-    batch.set(tradeDoc(user, trade.id), { ...toFirestore(trade), createdAt: serverTimestamp() });
+    batch.set(tradeDoc(user, trade.id), { ...toFirestore(trade), isDeleted: false, createdAt: serverTimestamp() });
     batch.delete(deletedTradeDoc(user, trade.id));
     batch.delete(deletedSymbolDoc(user, trade.symbol));
   }
@@ -314,7 +324,7 @@ export const replaceUserTrades = async (user: User, trades: TrackedTrade[]) => {
   }
 
   for (const trade of normalizedTrades) {
-    batch.set(tradeDoc(user, trade.id), toFirestore(trade));
+    batch.set(tradeDoc(user, trade.id), { ...toFirestore(trade), isDeleted: false });
     batch.delete(deletedTradeDoc(user, trade.id));
     batch.delete(deletedSymbolDoc(user, trade.symbol));
   }

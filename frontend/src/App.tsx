@@ -678,15 +678,10 @@ export default function App() {
     const tradeWithRecommendation = await enrichTradeRecommendation(baseTrade);
     try {
       await saveUserTrade(user, tradeWithRecommendation);
-      setTrades((currentTrades) => {
-        const exists = currentTrades.some((trade) => trade.id === tradeWithRecommendation.id);
-        if (!exists) return [tradeWithRecommendation, ...currentTrades];
-        return currentTrades.map((trade) => (trade.id === tradeWithRecommendation.id ? tradeWithRecommendation : trade));
-      });
-
       setActiveCategory(tradeWithRecommendation.category ?? "Swing");
       setForm(emptyForm);
-      setStatusMessage(`${tradeWithRecommendation.symbol} saved. Sell recommendation updated locally.`);
+      await syncServerState();
+      setStatusMessage(`${tradeWithRecommendation.symbol} saved and confirmed by Firestore.`);
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Failed to save trade to Firestore.");
       setStatusMessage("Trade save failed.");
