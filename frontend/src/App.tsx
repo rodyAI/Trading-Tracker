@@ -1457,6 +1457,9 @@ export default function App() {
           </p>
           <div className="account-bar">
             <span>{user.email ?? "Signed in"}</span>
+            <button type="button" className="primary-button compact-button" onClick={() => setIsSideMenuOpen(true)}>
+              Controls
+            </button>
             <button type="button" className="secondary-button" onClick={() => void signOutCurrentUser()}>
               Sign Out
             </button>
@@ -1576,7 +1579,7 @@ export default function App() {
               : `Recalculate ${activeCategory} Recommendations`}
           </button>
           <button type="button" className="secondary-button full-width" onClick={() => setIsSideMenuOpen(true)}>
-            More Controls
+            Open Side Menu
           </button>
           {globalError && <p className="error-text">{globalError}</p>}
         </section>

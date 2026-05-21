@@ -370,6 +370,11 @@ textarea {
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
 }
 
+.compact-button {
+  min-height: 34px;
+  padding: 7px 11px;
+}
+
 .secondary-button,
 .icon-button,
 .sort-controls button {
