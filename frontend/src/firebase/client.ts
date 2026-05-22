@@ -4,8 +4,10 @@ import {
   type Auth,
   createUserWithEmailAndPassword,
   getAuth,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signInWithRedirect,
   signOut,
   type User,
@@ -81,6 +83,21 @@ export const signInWithEmail = (email: string, password: string) =>
 export const signUpWithEmail = (email: string, password: string) =>
   createUserWithEmailAndPassword(requireAuth(), email, password);
 
-export const signInWithGoogle = () => signInWithRedirect(requireAuth(), googleProvider);
+const shouldFallbackToRedirect = (error: unknown) => {
+  const code = typeof error === "object" && error != null && "code" in error ? String(error.code) : "";
+  return ["auth/popup-blocked", "auth/cancelled-popup-request", "auth/operation-not-supported-in-this-environment"].includes(code);
+};
+
+export const signInWithGoogle = async () => {
+  const authInstance = requireAuth();
+  try {
+    return await signInWithPopup(authInstance, googleProvider);
+  } catch (error) {
+    if (shouldFallbackToRedirect(error)) return signInWithRedirect(authInstance, googleProvider);
+    throw error;
+  }
+};
+
+export const completeGoogleRedirectSignIn = () => getRedirectResult(requireAuth());
 
 export const signOutCurrentUser = () => signOut(requireAuth());

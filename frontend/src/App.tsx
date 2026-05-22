@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useSta
 import type { MarketCandle, MarketDataProviderId } from "@shared/types";
 import { buildInfo } from "./buildInfo";
 import {
+  completeGoogleRedirectSignIn,
   signInWithEmail,
   signInWithGoogle,
   signOutCurrentUser,
@@ -339,6 +340,13 @@ export default function App() {
       setUser(nextUser);
       setIsAuthLoading(false);
     });
+  }, []);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+    void completeGoogleRedirectSignIn()
+      .then(() => setAuthError(""))
+      .catch((error) => setAuthError(getAuthErrorMessage(error)));
   }, []);
 
   useEffect(() => {
