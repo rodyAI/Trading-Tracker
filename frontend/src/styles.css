@@ -382,6 +382,29 @@ label span,
   margin-top: 16px;
 }
 
+.form-optional-details {
+  margin-top: 14px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.form-optional-details summary {
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.form-optional-details[open] {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .section-heading h2,
 .results-toolbar h2,
 .card-heading h3 {

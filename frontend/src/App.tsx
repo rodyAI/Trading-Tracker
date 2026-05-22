@@ -271,6 +271,7 @@ export default function App() {
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [isTradeFormOpen, setIsTradeFormOpen] = useState(false);
+  const [isTradeOptionalDetailsOpen, setIsTradeOptionalDetailsOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
   const [persistenceDiagnostics, setPersistenceDiagnostics] = useState("");
@@ -804,12 +805,6 @@ export default function App() {
     setFormErrors((current) => ({ ...current, [field]: undefined }));
   };
 
-  const handleFormCheckedChange = (field: keyof Pick<TradeFormValues, "excludeFromPortfolioTotals">) => (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
-    setForm((current) => ({ ...current, [field]: event.target.checked }));
-  };
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user) {
@@ -841,6 +836,7 @@ export default function App() {
       setActiveCategory(tradeWithRecommendation.category ?? "Swing");
       setForm(emptyForm);
       setIsTradeFormOpen(false);
+      setIsTradeOptionalDetailsOpen(false);
       await syncServerState();
       setStatusMessage(`${tradeWithRecommendation.symbol} saved and confirmed by Firestore.`);
     } catch (error) {
@@ -866,6 +862,7 @@ export default function App() {
     setFormErrors({});
     setActiveCategory(trade.category ?? "Swing");
     setIsTradeFormOpen(true);
+    setIsTradeOptionalDetailsOpen(Boolean(trade.stopLoss || trade.takeProfit || trade.entryDate || trade.tags?.length || trade.notes));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -970,6 +967,7 @@ export default function App() {
     setForm(emptyForm);
     setFormErrors({});
     setIsTradeFormOpen(false);
+    setIsTradeOptionalDetailsOpen(false);
   };
 
   const handleSort = (nextKey: SortKey) => {
@@ -1644,37 +1642,38 @@ export default function App() {
                   <input type="number" min="0" step="0.01" value={form.entryPrice} onChange={handleFormChange("entryPrice")} placeholder="125.00" />
                   {formErrors.entryPrice && <small className="field-error">{formErrors.entryPrice}</small>}
                 </label>
-                <label>
-                  <span>Stop loss optional</span>
-                  <input type="number" min="0" step="0.01" value={form.stopLoss} onChange={handleFormChange("stopLoss")} placeholder="Optional" />
-                  {formErrors.stopLoss && <small className="field-error">{formErrors.stopLoss}</small>}
-                </label>
-                <label>
-                  <span>Take profit optional</span>
-                  <input type="number" min="0" step="0.01" value={form.takeProfit} onChange={handleFormChange("takeProfit")} placeholder="Leave blank for recommendation" />
-                  {formErrors.takeProfit && <small className="field-error">{formErrors.takeProfit}</small>}
-                </label>
-                <label>
-                  <span>Entry date</span>
-                  <input type="date" value={form.entryDate} onChange={handleFormChange("entryDate")} />
-                </label>
               </div>
-              <label className="wide-field">
-                <span>Tags</span>
-                <input value={form.tags} onChange={handleFormChange("tags")} placeholder="breakout, pullback, high risk" />
-              </label>
-              <label className="wide-field">
-                <span>Notes</span>
-                <textarea value={form.notes} onChange={handleFormChange("notes")} rows={3} placeholder="Setup, catalyst, invalidation, earnings notes..." />
-              </label>
-              <label className="checkbox-field wide-field">
-                <input
-                  type="checkbox"
-                  checked={form.excludeFromPortfolioTotals}
-                  onChange={handleFormCheckedChange("excludeFromPortfolioTotals")}
-                />
-                <span>Exclude this stock from portfolio total P/L</span>
-              </label>
+              <details
+                className="form-optional-details"
+                open={isTradeOptionalDetailsOpen}
+                onToggle={(event) => setIsTradeOptionalDetailsOpen(event.currentTarget.open)}
+              >
+                <summary>Optional details</summary>
+                <div className="form-grid compact-form-grid">
+                  <label>
+                    <span>Stop loss</span>
+                    <input type="number" min="0" step="0.01" value={form.stopLoss} onChange={handleFormChange("stopLoss")} placeholder="Optional" />
+                    {formErrors.stopLoss && <small className="field-error">{formErrors.stopLoss}</small>}
+                  </label>
+                  <label>
+                    <span>Take profit</span>
+                    <input type="number" min="0" step="0.01" value={form.takeProfit} onChange={handleFormChange("takeProfit")} placeholder="Optional" />
+                    {formErrors.takeProfit && <small className="field-error">{formErrors.takeProfit}</small>}
+                  </label>
+                  <label>
+                    <span>Entry date</span>
+                    <input type="date" value={form.entryDate} onChange={handleFormChange("entryDate")} />
+                  </label>
+                </div>
+                <label className="wide-field">
+                  <span>Tags</span>
+                  <input value={form.tags} onChange={handleFormChange("tags")} placeholder="breakout, pullback, high risk" />
+                </label>
+                <label className="wide-field">
+                  <span>Notes</span>
+                  <textarea value={form.notes} onChange={handleFormChange("notes")} rows={3} placeholder="Setup, catalyst, invalidation, earnings notes..." />
+                </label>
+              </details>
               <div className="form-actions">
                 <button type="submit" className="primary-button">{form.id ? "Save Changes" : "Add Trade"}</button>
                 {form.id && <button type="button" className="secondary-button" onClick={handleCancelEdit}>Cancel</button>}
