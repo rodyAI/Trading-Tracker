@@ -64,13 +64,26 @@ const emptyForm: TradeFormValues = {
 };
 
 const normalizeCategoryLabels = (labels: CategoryLabels): CategoryLabels =>
-  TRADE_CATEGORIES.reduce(
+  Object.keys(labels).reduce(
     (nextLabels, category) => ({
       ...nextLabels,
       [category]: labels[category]?.trim() || category,
     }),
     {} as CategoryLabels,
   );
+
+const normalizeCategoryName = (value: string) => value.trim().replace(/\s+/g, " ");
+
+const uniqueCategories = (categories: string[]) => {
+  const seen = new Set<string>();
+  return categories
+    .map(normalizeCategoryName)
+    .filter((category) => {
+      if (!category || seen.has(category)) return false;
+      seen.add(category);
+      return true;
+    });
+};
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -250,6 +263,8 @@ export default function App() {
   const [sectionSelectionDraft, setSectionSelectionDraft] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
   const [categoryLabels, setCategoryLabels] = useState<CategoryLabels>(() => defaultCategoryLabels);
   const [categoryLabelDraft, setCategoryLabelDraft] = useState<CategoryLabels>(() => defaultCategoryLabels);
+  const [customSectionName, setCustomSectionName] = useState("");
+  const [customSectionError, setCustomSectionError] = useState("");
   const [isSectionChooserOpen, setIsSectionChooserOpen] = useState(false);
   const [isSavingSections, setIsSavingSections] = useState(false);
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
@@ -314,6 +329,8 @@ export default function App() {
       setSectionSelectionDraft([...TRADE_CATEGORIES]);
       setCategoryLabels(defaultCategoryLabels);
       setCategoryLabelDraft(defaultCategoryLabels);
+      setCustomSectionName("");
+      setCustomSectionError("");
       setIsSectionChooserOpen(false);
       setIsSideMenuOpen(false);
       setIsLoadingTrades(false);
@@ -680,13 +697,34 @@ export default function App() {
     }));
   };
 
+  const addCustomSectionDraft = () => {
+    const nextCategory = normalizeCategoryName(customSectionName);
+    if (!nextCategory) {
+      setCustomSectionError("Enter a section name.");
+      return;
+    }
+    if (nextCategory.includes("/")) {
+      setCustomSectionError("Section names cannot include /.");
+      return;
+    }
+    if (sectionSelectionDraft.some((category) => category.toLowerCase() === nextCategory.toLowerCase())) {
+      setCustomSectionError("That section already exists.");
+      return;
+    }
+
+    setSectionSelectionDraft((current) => [...current, nextCategory]);
+    setCategoryLabelDraft((current) => ({ ...current, [nextCategory]: nextCategory }));
+    setCustomSectionName("");
+    setCustomSectionError("");
+  };
+
   const saveSectionSelection = async () => {
     if (!user) {
       setStatusMessage("Sign in before changing dashboard sections.");
       return;
     }
 
-    const nextEnabledCategories = TRADE_CATEGORIES.filter((category) => sectionSelectionDraft.includes(category));
+    const nextEnabledCategories = uniqueCategories(sectionSelectionDraft);
     if (nextEnabledCategories.length === 0) {
       setGlobalError("Select at least one dashboard section.");
       return;
@@ -722,6 +760,8 @@ export default function App() {
       setImportCategory((current) =>
         savedSettings.enabledCategories.includes(current) ? current : savedSettings.enabledCategories[0],
       );
+      setCustomSectionName("");
+      setCustomSectionError("");
       setIsSectionChooserOpen(false);
       setIsSideMenuOpen(false);
       setStatusMessage("Dashboard sections and tab names saved.");
@@ -942,35 +982,46 @@ export default function App() {
     return trades.filter(isVisibleTrade).sort((left, right) => (sortDirection === "asc" ? compare(left, right) : -compare(left, right)));
   }, [sortDirection, sortKey, trades]);
 
+  const allTradeCategories = useMemo(
+    () =>
+      uniqueCategories([
+        ...TRADE_CATEGORIES,
+        ...enabledTradeCategories,
+        ...sectionSelectionDraft,
+        ...trades.map((trade) => trade.category ?? "Swing"),
+      ]),
+    [enabledTradeCategories, sectionSelectionDraft, trades],
+  );
+
   const tradesByCategory = useMemo(
     () =>
-      TRADE_CATEGORIES.reduce(
+      allTradeCategories.reduce(
         (groups, category) => ({
           ...groups,
           [category]: sortedTrades.filter((trade) => (trade.category ?? "Swing") === category),
         }),
         {} as Record<TradeCategory, TrackedTrade[]>,
       ),
-    [sortedTrades],
+    [allTradeCategories, sortedTrades],
   );
   const visibleTradeCategories = useMemo(
-    () => TRADE_CATEGORIES.filter((category) => enabledTradeCategories.includes(category)),
-    [enabledTradeCategories],
+    () => allTradeCategories.filter((category) => enabledTradeCategories.includes(category)),
+    [allTradeCategories, enabledTradeCategories],
   );
   const visibleTradeCategorySet = useMemo(() => new Set(visibleTradeCategories), [visibleTradeCategories]);
   const activeTrades = tradesByCategory[activeCategory] ?? [];
   const categorySummaries = useMemo(
     () =>
-      TRADE_CATEGORIES.reduce(
+      allTradeCategories.reduce(
         (summaries, category) => ({
           ...summaries,
           [category]: summarizeTrades(tradesByCategory[category]),
         }),
         {} as Record<TradeCategory, ReturnType<typeof summarizeTrades>>,
       ),
-    [tradesByCategory],
+    [allTradeCategories, tradesByCategory],
   );
-  const activeSummary = categorySummaries[activeCategory];
+  const activeSummary = categorySummaries[activeCategory] ?? summarizeTrades([]);
   const categoryDisplayLabels = useMemo(() => normalizeCategoryLabels(categoryLabels), [categoryLabels]);
   const getCategoryLabel = useCallback(
     (category: TradeCategory) => categoryDisplayLabels[category] || category,
@@ -1673,6 +1724,8 @@ export default function App() {
                   onClick={() => {
                     setSectionSelectionDraft(enabledTradeCategories);
                     setCategoryLabelDraft(categoryLabels);
+                    setCustomSectionName("");
+                    setCustomSectionError("");
                     setIsSectionChooserOpen((current) => !current);
                     setIsImportChooserOpen(false);
                   }}
@@ -1686,7 +1739,12 @@ export default function App() {
                       <p className="meta-text">Only selected sections appear in the add form, import menu, and dashboard tabs.</p>
                     </div>
                     <div className="section-choice-grid">
-                      {TRADE_CATEGORIES.map((category) => (
+                      {uniqueCategories([
+                        ...TRADE_CATEGORIES,
+                        ...enabledTradeCategories,
+                        ...sectionSelectionDraft,
+                        ...Object.keys(categoryLabelDraft),
+                      ]).map((category) => (
                         <div key={category} className="section-choice">
                           <label className="section-choice-toggle">
                             <input
@@ -1707,6 +1765,23 @@ export default function App() {
                         </div>
                       ))}
                     </div>
+                    <div className="custom-section-row">
+                      <label>
+                        <span>Custom section</span>
+                        <input
+                          value={customSectionName}
+                          onChange={(event) => {
+                            setCustomSectionName(event.target.value);
+                            setCustomSectionError("");
+                          }}
+                          placeholder="My watchlist"
+                        />
+                      </label>
+                      <button type="button" className="secondary-button" onClick={addCustomSectionDraft}>
+                        Add Section
+                      </button>
+                    </div>
+                    {customSectionError && <small className="field-error">{customSectionError}</small>}
                     <div className="form-actions">
                       <button type="button" className="primary-button" onClick={() => void saveSectionSelection()} disabled={isSavingSections}>
                         {isSavingSections ? "Saving..." : "Save Selections"}
@@ -1717,6 +1792,8 @@ export default function App() {
                         onClick={() => {
                           setSectionSelectionDraft(enabledTradeCategories);
                           setCategoryLabelDraft(categoryLabels);
+                          setCustomSectionName("");
+                          setCustomSectionError("");
                           setIsSectionChooserOpen(false);
                         }}
                         disabled={isSavingSections}

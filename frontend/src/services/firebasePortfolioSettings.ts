@@ -13,7 +13,7 @@ import {
 import { requireDb, type User } from "../firebase/client";
 import { TRADE_CATEGORIES, type TradeCategory } from "../utils/tradeCalculations";
 
-export type CategoryLabels = Record<TradeCategory, string>;
+export type CategoryLabels = Record<string, string>;
 
 export interface PortfolioSettings {
   excludedCategories: TradeCategory[];
@@ -37,7 +37,21 @@ const defaultSettings: PortfolioSettings = {
 const settingsDoc = (user: User) => doc(requireDb(), "users", user.uid, "settings", "portfolioTotals");
 const excludedCategoriesCollection = (user: User) => collection(requireDb(), "users", user.uid, "excludedPortfolioCategories");
 const excludedCategoryDoc = (user: User, category: TradeCategory) =>
-  doc(requireDb(), "users", user.uid, "excludedPortfolioCategories", category);
+  doc(requireDb(), "users", user.uid, "excludedPortfolioCategories", encodeURIComponent(category));
+
+const normalizeCategoryName = (category: unknown) =>
+  typeof category === "string" ? category.trim().replace(/\s+/g, " ") : "";
+
+const uniqueCategories = (categories: readonly unknown[]) => {
+  const seen = new Set<string>();
+  return categories
+    .map(normalizeCategoryName)
+    .filter((category) => {
+      if (!category || seen.has(category)) return false;
+      seen.add(category);
+      return true;
+    });
+};
 
 const normalizeSettings = (data: Record<string, unknown> | undefined): PortfolioSettings => {
   const rawCategories = Array.isArray(data?.excludedCategories) ? data.excludedCategories : [];
@@ -46,10 +60,9 @@ const normalizeSettings = (data: Record<string, unknown> | undefined): Portfolio
     data?.categoryLabels && typeof data.categoryLabels === "object"
       ? data.categoryLabels as Record<string, unknown>
       : {};
-  const enabledCategories = rawEnabledCategories.filter((category): category is TradeCategory =>
-    TRADE_CATEGORIES.includes(category as TradeCategory),
-  );
-  const categoryLabels = TRADE_CATEGORIES.reduce((labels, category) => {
+  const enabledCategories = uniqueCategories(rawEnabledCategories);
+  const knownCategories = uniqueCategories([...TRADE_CATEGORIES, ...enabledCategories]);
+  const categoryLabels = knownCategories.reduce((labels, category) => {
     const rawLabel = rawCategoryLabels[category];
     const label = typeof rawLabel === "string" ? rawLabel.trim() : "";
     return {
@@ -59,9 +72,7 @@ const normalizeSettings = (data: Record<string, unknown> | undefined): Portfolio
   }, {} as CategoryLabels);
 
   return {
-    excludedCategories: rawCategories.filter((category): category is TradeCategory =>
-      TRADE_CATEGORIES.includes(category as TradeCategory),
-    ),
+    excludedCategories: uniqueCategories(rawCategories),
     enabledCategories: enabledCategories.length > 0 ? enabledCategories : [...TRADE_CATEGORIES],
     categoryLabels,
   };
@@ -89,11 +100,14 @@ export const subscribeToPortfolioSettings = (
 export const savePortfolioSettings = async (user: User, settings: PortfolioSettings) => {
   const db = requireDb();
   const ref = settingsDoc(user);
-  const enabledCategories = settings.enabledCategories.length > 0 ? settings.enabledCategories : [...TRADE_CATEGORIES];
+  const enabledCategories = uniqueCategories(settings.enabledCategories).length > 0
+    ? uniqueCategories(settings.enabledCategories)
+    : [...TRADE_CATEGORIES];
   const enabledSet = new Set(enabledCategories);
-  const excludedCategories = settings.excludedCategories.filter((category) => enabledSet.has(category));
+  const excludedCategories = uniqueCategories(settings.excludedCategories).filter((category) => enabledSet.has(category));
   const excludedSet = new Set(excludedCategories);
-  const categoryLabels = TRADE_CATEGORIES.reduce((labels, category) => {
+  const knownCategories = uniqueCategories([...TRADE_CATEGORIES, ...enabledCategories]);
+  const categoryLabels = knownCategories.reduce((labels, category) => {
     const label = settings.categoryLabels?.[category]?.trim() || category;
     return { ...labels, [category]: label };
   }, {} as CategoryLabels);
@@ -106,7 +120,7 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
     updatedAt: serverTimestamp(),
   });
 
-  for (const category of TRADE_CATEGORIES) {
+  for (const category of knownCategories) {
     if (excludedSet.has(category)) {
       batch.set(excludedCategoryDoc(user, category), {
         category,
@@ -124,7 +138,7 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
   if (
     !sameCategories(savedSettings.excludedCategories, excludedCategories) ||
     !sameCategories(savedSettings.enabledCategories, enabledCategories) ||
-    TRADE_CATEGORIES.some((category) => savedSettings.categoryLabels[category] !== categoryLabels[category])
+    knownCategories.some((category) => savedSettings.categoryLabels[category] !== categoryLabels[category])
   ) {
     throw new Error("Firestore did not confirm the portfolio settings update. Please try again.");
   }
@@ -141,7 +155,8 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
   const categoryLabels = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).categoryLabels : defaultCategoryLabels;
   const ledgerCategories = excludedSnapshot.docs
     .map((item) => item.data().category)
-    .filter((category): category is TradeCategory => TRADE_CATEGORIES.includes(category as TradeCategory));
+    .map(normalizeCategoryName)
+    .filter(Boolean);
   const excludedCategories = [...new Set([...settingsCategories, ...ledgerCategories])];
 
   return settingsSnapshot.exists() || excludedSnapshot.docs.length > 0

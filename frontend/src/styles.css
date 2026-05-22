@@ -261,6 +261,13 @@ label span,
   padding: 9px 10px;
 }
 
+.custom-section-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.7fr);
@@ -1226,6 +1233,10 @@ td small.recommendation-error {
     min-height: 34px;
     padding: 7px 8px;
     font-size: 0.78rem;
+  }
+
+  .custom-section-row {
+    grid-template-columns: 1fr;
   }
 
   .side-menu-backdrop {

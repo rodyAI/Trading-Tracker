@@ -3,11 +3,9 @@ import path from "node:path";
 import { z } from "zod";
 import { config } from "../config.js";
 
-const TRADE_CATEGORIES = ["Swing", "Long trades", "Value investing", "Magic formula"] as const;
-
 const tradeSchema = z.object({
   id: z.string().min(1),
-  category: z.enum(TRADE_CATEGORIES).default("Swing"),
+  category: z.string().trim().min(1).default("Swing"),
   symbol: z.string().min(1),
   quantity: z.number().positive(),
   entryPrice: z.number().positive(),

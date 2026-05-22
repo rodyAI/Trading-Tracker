@@ -2,7 +2,7 @@ import type { MarketCandle } from "@shared/types";
 
 export type TradeStatus = "Open" | "Closed" | "Stop loss hit" | "Take profit hit" | "In profit" | "In loss";
 export const TRADE_CATEGORIES = ["Swing", "Long trades", "Value investing", "Magic formula"] as const;
-export type TradeCategory = (typeof TRADE_CATEGORIES)[number];
+export type TradeCategory = string;
 
 export interface TrackedTrade {
   id: string;
