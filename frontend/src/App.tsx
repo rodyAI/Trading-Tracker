@@ -1966,12 +1966,26 @@ export default function App() {
 
         <section className="dashboard-sheet">
           <div className="dashboard-section-header">
-            <div>
+            <div className="strategy-title-block">
               <h3>{getCategoryLabel(activeCategory)}</h3>
               <span>
                 {numberFormatter.format(activeTrades.length)} trades, {activeSummary.openCount} open,{" "}
                 {activeSummary.closedCount} closed
               </span>
+            </div>
+            <div className="strategy-pl-row">
+              <div className={`sheet-pl ${activeSummary.unrealized >= 0 ? "positive" : "negative"}`}>
+                <span>Open P/L</span>
+                <strong>{formatCurrency(activeSummary.unrealized)}</strong>
+                <small>{formatPercent(activeSummary.unrealizedPercent)}</small>
+              </div>
+              <div className={`sheet-pl ${activeSummary.realized >= 0 ? "positive" : "negative"}`}>
+                <span>Realized P/L</span>
+                <strong>{formatCurrency(activeSummary.realized)}</strong>
+                <small>{formatPercent(activeSummary.realizedPercent)}</small>
+              </div>
+            </div>
+            <div className="strategy-inclusion-row">
               <small className="section-inclusion-status">
                 {excludedPortfolioCategorySet.has(activeCategory) ? "Excluded from total P/L" : "Included in total P/L"}
               </small>
@@ -1986,16 +2000,6 @@ export default function App() {
                   ? "Include in total P/L"
                   : "Exclude from total P/L"}
               </button>
-            </div>
-            <div className={`sheet-pl ${activeSummary.unrealized >= 0 ? "positive" : "negative"}`}>
-              <span>Open P/L</span>
-              <strong>{formatCurrency(activeSummary.unrealized)}</strong>
-              <small>{formatPercent(activeSummary.unrealizedPercent)}</small>
-            </div>
-            <div className={`sheet-pl ${activeSummary.realized >= 0 ? "positive" : "negative"}`}>
-              <span>Realized P/L</span>
-              <strong>{formatCurrency(activeSummary.realized)}</strong>
-              <small>{formatPercent(activeSummary.realizedPercent)}</small>
             </div>
           </div>
 

@@ -663,15 +663,18 @@ textarea {
 }
 
 .dashboard-section-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: end;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .dashboard-section-header h3 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.65rem;
+  line-height: 1.08;
 }
 
 .dashboard-section-header span,
@@ -680,8 +683,29 @@ textarea {
   font-size: 0.85rem;
 }
 
+.strategy-title-block {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.strategy-pl-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.strategy-inclusion-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .section-total-toggle {
-  margin-top: 8px;
+  margin-top: 0;
   min-height: 34px;
   padding: 7px 10px;
   color: #d9eef4;
@@ -690,8 +714,10 @@ textarea {
 }
 
 .section-inclusion-status {
-  display: block;
-  margin-top: 5px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin-top: 0;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
@@ -705,13 +731,18 @@ textarea {
 
 .sheet-pl {
   display: grid;
-  gap: 3px;
-  min-width: 180px;
-  justify-items: end;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  justify-items: start;
 }
 
 .sheet-pl strong {
-  font-size: 1.2rem;
+  font-size: 1.25rem;
+  line-height: 1.15;
 }
 
 .sheet-pl small {
@@ -1504,17 +1535,12 @@ td small.recommendation-error {
 
   .dashboard-section-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(112px, auto);
-    gap: 8px 10px;
-    align-items: start;
-  }
-
-  .dashboard-section-header > div:first-child {
-    min-width: 0;
+    gap: 10px;
+    padding: 10px;
   }
 
   .dashboard-section-header h3 {
-    font-size: 1rem;
+    font-size: 1.28rem;
   }
 
   .dashboard-section-header span {
@@ -1523,16 +1549,25 @@ td small.recommendation-error {
     line-height: 1.35;
   }
 
+  .strategy-pl-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .strategy-inclusion-row {
+    display: grid;
+    gap: 8px;
+  }
+
   .section-total-toggle {
-    grid-column: 1 / -1;
     width: 100%;
     min-height: 34px;
     margin-top: 0;
   }
 
   .sheet-pl {
-    justify-items: end;
     min-width: 0;
+    padding: 8px;
   }
 
   .sheet-pl span {
