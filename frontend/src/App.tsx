@@ -114,6 +114,23 @@ const formatPrice = (value: number | null | undefined) =>
 const formatPercent = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? unavailableLabel : `${percentFormatter.format(value)}%`;
 
+const getAuthErrorMessage = (error: unknown) => {
+  const code = typeof error === "object" && error != null && "code" in error ? String(error.code) : "";
+  if (code === "auth/operation-not-allowed") {
+    return "Google sign-in is not enabled for this Firebase project. Enable Google in Firebase Authentication.";
+  }
+  if (code === "auth/unauthorized-domain") {
+    return "This domain is not authorized for Google sign-in. Add this site domain in Firebase Authentication settings.";
+  }
+  if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
+    return "Google sign-in could not open in this browser. Try again, or use email and password.";
+  }
+  if (code === "auth/network-request-failed") {
+    return "Google sign-in could not reach Firebase. Check your connection and try again.";
+  }
+  return error instanceof Error ? error.message : "Google sign-in failed.";
+};
+
 const createId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -1462,7 +1479,7 @@ export default function App() {
     try {
       await signInWithGoogle();
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Google sign-in failed.");
+      setAuthError(getAuthErrorMessage(error));
     }
   };
 
