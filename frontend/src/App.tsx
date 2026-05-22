@@ -20,8 +20,10 @@ import {
   saveUserTrade,
 } from "./services/firebaseTradeStore";
 import {
+  defaultCategoryLabels,
   loadPortfolioSettingsFromServer,
   savePortfolioSettings,
+  type CategoryLabels,
 } from "./services/firebasePortfolioSettings";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
@@ -60,6 +62,15 @@ const emptyForm: TradeFormValues = {
   tags: "",
   excludeFromPortfolioTotals: false,
 };
+
+const normalizeCategoryLabels = (labels: CategoryLabels): CategoryLabels =>
+  TRADE_CATEGORIES.reduce(
+    (nextLabels, category) => ({
+      ...nextLabels,
+      [category]: labels[category]?.trim() || category,
+    }),
+    {} as CategoryLabels,
+  );
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -237,6 +248,8 @@ export default function App() {
   const [excludedPortfolioCategories, setExcludedPortfolioCategories] = useState<TradeCategory[]>([]);
   const [enabledTradeCategories, setEnabledTradeCategories] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
   const [sectionSelectionDraft, setSectionSelectionDraft] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
+  const [categoryLabels, setCategoryLabels] = useState<CategoryLabels>(() => defaultCategoryLabels);
+  const [categoryLabelDraft, setCategoryLabelDraft] = useState<CategoryLabels>(() => defaultCategoryLabels);
   const [isSectionChooserOpen, setIsSectionChooserOpen] = useState(false);
   const [isSavingSections, setIsSavingSections] = useState(false);
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
@@ -276,6 +289,8 @@ export default function App() {
     setExcludedPortfolioCategories(serverSettings.excludedCategories);
     setEnabledTradeCategories(serverSettings.enabledCategories);
     setSectionSelectionDraft(serverSettings.enabledCategories);
+    setCategoryLabels(serverSettings.categoryLabels);
+    setCategoryLabelDraft(serverSettings.categoryLabels);
     if (!serverSettings.exists) {
       setIsSectionChooserOpen(true);
       setIsSideMenuOpen(true);
@@ -297,6 +312,8 @@ export default function App() {
       setExcludedPortfolioCategories([]);
       setEnabledTradeCategories([...TRADE_CATEGORIES]);
       setSectionSelectionDraft([...TRADE_CATEGORIES]);
+      setCategoryLabels(defaultCategoryLabels);
+      setCategoryLabelDraft(defaultCategoryLabels);
       setIsSectionChooserOpen(false);
       setIsSideMenuOpen(false);
       setIsLoadingTrades(false);
@@ -444,9 +461,10 @@ export default function App() {
     }
 
     const tabTrades = trades.filter((trade) => isVisibleTrade(trade) && (trade.category ?? "Swing") === activeCategory);
+    const activeCategoryLabel = categoryLabels[activeCategory]?.trim() || activeCategory;
 
     if (tabTrades.length === 0) {
-      setStatusMessage(`No trades to recalculate in ${activeCategory}.`);
+      setStatusMessage(`No trades to update in ${activeCategoryLabel}.`);
       return;
     }
 
@@ -462,7 +480,7 @@ export default function App() {
       for (const [index, trade] of tabTrades.entries()) {
         setRecommendationProgress({ current: index + 1, total: tabTrades.length });
         setStatusMessage(
-          `Recalculating ${activeCategory} sell recommendations ${index + 1}/${tabTrades.length}: ${trade.symbol}`,
+          `Updating ${activeCategoryLabel} sell targets ${index + 1}/${tabTrades.length}: ${trade.symbol}`,
         );
 
         try {
@@ -489,7 +507,7 @@ export default function App() {
       }
 
       setStatusMessage(
-        `Updated ${updatedRecommendations.length} ${activeCategory} sell recommendation${
+        `Updated ${updatedRecommendations.length} ${activeCategoryLabel} sell target${
           updatedRecommendations.length === 1 ? "" : "s"
         } locally.`,
       );
@@ -501,7 +519,7 @@ export default function App() {
       setIsRecalculatingRecommendations(false);
       setRecommendationProgress(null);
     }
-  }, [activeCategory, enrichTradeRecommendation, trades, user]);
+  }, [activeCategory, categoryLabels, enrichTradeRecommendation, trades, user]);
 
   const handleRecalculateTrade = async (trade: TrackedTrade) => {
     if (trade.isClosed || recalculatingTradeIds.has(trade.id)) return;
@@ -633,12 +651,15 @@ export default function App() {
       const savedSettings = await savePortfolioSettings(user, {
         excludedCategories: nextCategories,
         enabledCategories: enabledTradeCategories,
+        categoryLabels,
       });
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
       setEnabledTradeCategories(savedSettings.enabledCategories);
       setSectionSelectionDraft(savedSettings.enabledCategories);
+      setCategoryLabels(savedSettings.categoryLabels);
+      setCategoryLabelDraft(savedSettings.categoryLabels);
       cacheExcludedCategories(user, savedSettings.excludedCategories);
-      setStatusMessage(`${category} ${nextCategories.includes(category) ? "excluded from" : "included in"} portfolio total P/L.`);
+      setStatusMessage(`${getCategoryLabel(category)} ${nextCategories.includes(category) ? "excluded from" : "included in"} portfolio total P/L.`);
     } catch (error) {
       setExcludedPortfolioCategories(excludedPortfolioCategories);
       cacheExcludedCategories(user, excludedPortfolioCategories);
@@ -650,6 +671,13 @@ export default function App() {
     setSectionSelectionDraft((current) =>
       current.includes(category) ? current.filter((item) => item !== category) : [...current, category],
     );
+  };
+
+  const handleCategoryLabelDraftChange = (category: TradeCategory, value: string) => {
+    setCategoryLabelDraft((current) => ({
+      ...current,
+      [category]: value,
+    }));
   };
 
   const saveSectionSelection = async () => {
@@ -667,6 +695,7 @@ export default function App() {
     const nextExcludedCategories = excludedPortfolioCategories.filter((category) =>
       nextEnabledCategories.includes(category),
     );
+    const nextCategoryLabels = normalizeCategoryLabels(categoryLabelDraft);
 
     setIsSavingSections(true);
     setGlobalError("");
@@ -674,10 +703,13 @@ export default function App() {
       const savedSettings = await savePortfolioSettings(user, {
         excludedCategories: nextExcludedCategories,
         enabledCategories: nextEnabledCategories,
+        categoryLabels: nextCategoryLabels,
       });
       setEnabledTradeCategories(savedSettings.enabledCategories);
       setSectionSelectionDraft(savedSettings.enabledCategories);
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
+      setCategoryLabels(savedSettings.categoryLabels);
+      setCategoryLabelDraft(savedSettings.categoryLabels);
       cacheExcludedCategories(user, savedSettings.excludedCategories);
       setActiveCategory((current) =>
         savedSettings.enabledCategories.includes(current) ? current : savedSettings.enabledCategories[0],
@@ -692,7 +724,7 @@ export default function App() {
       );
       setIsSectionChooserOpen(false);
       setIsSideMenuOpen(false);
-      setStatusMessage("Dashboard sections saved.");
+      setStatusMessage("Dashboard sections and tab names saved.");
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : "Failed to save dashboard sections.");
     } finally {
@@ -939,6 +971,11 @@ export default function App() {
     [tradesByCategory],
   );
   const activeSummary = categorySummaries[activeCategory];
+  const categoryDisplayLabels = useMemo(() => normalizeCategoryLabels(categoryLabels), [categoryLabels]);
+  const getCategoryLabel = useCallback(
+    (category: TradeCategory) => categoryDisplayLabels[category] || category,
+    [categoryDisplayLabels],
+  );
   const excludedPortfolioCategorySet = useMemo(
     () => new Set(excludedPortfolioCategories),
     [excludedPortfolioCategories],
@@ -1520,7 +1557,7 @@ export default function App() {
                   <select value={form.category} onChange={handleFormChange("category")}>
                     {visibleTradeCategories.map((category) => (
                       <option key={category} value={category}>
-                        {category}
+                        {getCategoryLabel(category)}
                       </option>
                     ))}
                   </select>
@@ -1594,7 +1631,7 @@ export default function App() {
           >
             {isRecalculatingRecommendations
               ? `Updating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? activeTrades.length}...`
-              : `Update ${activeCategory} Sell Targets`}
+              : `Update ${getCategoryLabel(activeCategory)} Sell Targets`}
           </button>
           {globalError && <p className="error-text">{globalError}</p>}
         </section>
@@ -1635,6 +1672,7 @@ export default function App() {
                   className="secondary-button full-width"
                   onClick={() => {
                     setSectionSelectionDraft(enabledTradeCategories);
+                    setCategoryLabelDraft(categoryLabels);
                     setIsSectionChooserOpen((current) => !current);
                     setIsImportChooserOpen(false);
                   }}
@@ -1649,14 +1687,24 @@ export default function App() {
                     </div>
                     <div className="section-choice-grid">
                       {TRADE_CATEGORIES.map((category) => (
-                        <label key={category} className="section-choice">
-                          <input
-                            type="checkbox"
-                            checked={sectionSelectionDraft.includes(category)}
-                            onChange={() => toggleSectionSelectionDraft(category)}
-                          />
-                          <span>{category}</span>
-                        </label>
+                        <div key={category} className="section-choice">
+                          <label className="section-choice-toggle">
+                            <input
+                              type="checkbox"
+                              checked={sectionSelectionDraft.includes(category)}
+                              onChange={() => toggleSectionSelectionDraft(category)}
+                            />
+                            <span>{category}</span>
+                          </label>
+                          <label className="section-name-field">
+                            <span>Tab name</span>
+                            <input
+                              value={categoryLabelDraft[category]}
+                              onChange={(event) => handleCategoryLabelDraftChange(category, event.target.value)}
+                              placeholder={category}
+                            />
+                          </label>
+                        </div>
                       ))}
                     </div>
                     <div className="form-actions">
@@ -1668,6 +1716,7 @@ export default function App() {
                         className="secondary-button"
                         onClick={() => {
                           setSectionSelectionDraft(enabledTradeCategories);
+                          setCategoryLabelDraft(categoryLabels);
                           setIsSectionChooserOpen(false);
                         }}
                         disabled={isSavingSections}
@@ -1717,7 +1766,7 @@ export default function App() {
                       <select value={importCategory} onChange={(event) => setImportCategory(event.target.value as TradeCategory)}>
                         {visibleTradeCategories.map((category) => (
                           <option key={category} value={category}>
-                            {category}
+                            {getCategoryLabel(category)}
                           </option>
                         ))}
                       </select>
@@ -1801,11 +1850,11 @@ export default function App() {
                 excludedPortfolioCategorySet.has(category) ? "excluded" : ""
               }`}
               onClick={() => setActiveCategory(category)}
-              aria-label={`${category}: ${formatCurrency(categorySummaries[category].totalProfitLoss)}, ${formatPercent(
+              aria-label={`${getCategoryLabel(category)}: ${formatCurrency(categorySummaries[category].totalProfitLoss)}, ${formatPercent(
                 categorySummaries[category].totalProfitLossPercent,
               )}${excludedPortfolioCategorySet.has(category) ? ", excluded from total portfolio P/L" : ""}`}
             >
-              <span className="tab-title">{category}</span>
+              <span className="tab-title">{getCategoryLabel(category)}</span>
               <strong className="tab-count">{numberFormatter.format(tradesByCategory[category].length)}</strong>
               <small className="tab-pl">
                 {formatCurrency(categorySummaries[category].totalProfitLoss)} /{" "}
@@ -1818,7 +1867,7 @@ export default function App() {
         <section className="dashboard-sheet">
           <div className="dashboard-section-header">
             <div>
-              <h3>{activeCategory}</h3>
+              <h3>{getCategoryLabel(activeCategory)}</h3>
               <span>
                 {numberFormatter.format(activeTrades.length)} trades, {activeSummary.openCount} open,{" "}
                 {activeSummary.closedCount} closed

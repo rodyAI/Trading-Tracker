@@ -13,15 +13,24 @@ import {
 import { requireDb, type User } from "../firebase/client";
 import { TRADE_CATEGORIES, type TradeCategory } from "../utils/tradeCalculations";
 
+export type CategoryLabels = Record<TradeCategory, string>;
+
 export interface PortfolioSettings {
   excludedCategories: TradeCategory[];
   enabledCategories: TradeCategory[];
+  categoryLabels: CategoryLabels;
   exists?: boolean;
 }
+
+export const defaultCategoryLabels = TRADE_CATEGORIES.reduce(
+  (labels, category) => ({ ...labels, [category]: category }),
+  {} as CategoryLabels,
+);
 
 const defaultSettings: PortfolioSettings = {
   excludedCategories: [],
   enabledCategories: [...TRADE_CATEGORIES],
+  categoryLabels: defaultCategoryLabels,
   exists: false,
 };
 
@@ -33,15 +42,28 @@ const excludedCategoryDoc = (user: User, category: TradeCategory) =>
 const normalizeSettings = (data: Record<string, unknown> | undefined): PortfolioSettings => {
   const rawCategories = Array.isArray(data?.excludedCategories) ? data.excludedCategories : [];
   const rawEnabledCategories = Array.isArray(data?.enabledCategories) ? data.enabledCategories : TRADE_CATEGORIES;
+  const rawCategoryLabels =
+    data?.categoryLabels && typeof data.categoryLabels === "object"
+      ? data.categoryLabels as Record<string, unknown>
+      : {};
   const enabledCategories = rawEnabledCategories.filter((category): category is TradeCategory =>
     TRADE_CATEGORIES.includes(category as TradeCategory),
   );
+  const categoryLabels = TRADE_CATEGORIES.reduce((labels, category) => {
+    const rawLabel = rawCategoryLabels[category];
+    const label = typeof rawLabel === "string" ? rawLabel.trim() : "";
+    return {
+      ...labels,
+      [category]: label || category,
+    };
+  }, {} as CategoryLabels);
 
   return {
     excludedCategories: rawCategories.filter((category): category is TradeCategory =>
       TRADE_CATEGORIES.includes(category as TradeCategory),
     ),
     enabledCategories: enabledCategories.length > 0 ? enabledCategories : [...TRADE_CATEGORIES],
+    categoryLabels,
   };
 };
 
@@ -71,11 +93,16 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
   const enabledSet = new Set(enabledCategories);
   const excludedCategories = settings.excludedCategories.filter((category) => enabledSet.has(category));
   const excludedSet = new Set(excludedCategories);
+  const categoryLabels = TRADE_CATEGORIES.reduce((labels, category) => {
+    const label = settings.categoryLabels?.[category]?.trim() || category;
+    return { ...labels, [category]: label };
+  }, {} as CategoryLabels);
   const batch = writeBatch(db);
 
   batch.set(ref, {
     excludedCategories,
     enabledCategories,
+    categoryLabels,
     updatedAt: serverTimestamp(),
   });
 
@@ -96,7 +123,8 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
   const savedSettings = await loadPortfolioSettingsFromServer(user);
   if (
     !sameCategories(savedSettings.excludedCategories, excludedCategories) ||
-    !sameCategories(savedSettings.enabledCategories, enabledCategories)
+    !sameCategories(savedSettings.enabledCategories, enabledCategories) ||
+    TRADE_CATEGORIES.some((category) => savedSettings.categoryLabels[category] !== categoryLabels[category])
   ) {
     throw new Error("Firestore did not confirm the portfolio settings update. Please try again.");
   }
@@ -110,12 +138,13 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
   ]);
   const settingsCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).excludedCategories : [];
   const enabledCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).enabledCategories : [...TRADE_CATEGORIES];
+  const categoryLabels = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).categoryLabels : defaultCategoryLabels;
   const ledgerCategories = excludedSnapshot.docs
     .map((item) => item.data().category)
     .filter((category): category is TradeCategory => TRADE_CATEGORIES.includes(category as TradeCategory));
   const excludedCategories = [...new Set([...settingsCategories, ...ledgerCategories])];
 
   return settingsSnapshot.exists() || excludedSnapshot.docs.length > 0
-    ? { excludedCategories, enabledCategories, exists: true }
+    ? { excludedCategories, enabledCategories, categoryLabels, exists: true }
     : defaultSettings;
 };

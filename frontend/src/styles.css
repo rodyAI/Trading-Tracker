@@ -220,16 +220,13 @@ label span,
 
 .section-choice-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
 .section-choice {
-  display: flex;
-  flex-direction: row;
+  display: grid;
   gap: 10px;
-  align-items: center;
-  min-height: 46px;
   padding: 10px;
   color: var(--text);
   background: var(--panel-soft);
@@ -237,10 +234,31 @@ label span,
   border-radius: 8px;
 }
 
-.section-choice input {
+.section-choice-toggle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.section-choice-toggle input {
   width: 18px;
   height: 18px;
   accent-color: var(--accent);
+}
+
+.section-choice-toggle span {
+  color: var(--text);
+  font-weight: 900;
+}
+
+.section-name-field {
+  display: grid;
+  gap: 5px;
+}
+
+.section-name-field input {
+  min-height: 38px;
+  padding: 9px 10px;
 }
 
 .workspace-grid {
@@ -1179,29 +1197,35 @@ td small.recommendation-error {
   }
 
   .section-choice-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 6px;
   }
 
   .section-choice {
-    gap: 5px;
-    min-height: 34px;
-    padding: 6px;
+    gap: 7px;
+    padding: 8px;
   }
 
-  .section-choice input {
+  .section-choice-toggle input {
     flex: 0 0 16px;
     width: 16px;
     height: 16px;
   }
 
-  .section-choice span {
+  .section-choice-toggle span,
+  .section-name-field span {
     overflow: hidden;
     font-size: 0.68rem;
     font-weight: 800;
     line-height: 1.15;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .section-name-field input {
+    min-height: 34px;
+    padding: 7px 8px;
+    font-size: 0.78rem;
   }
 
   .side-menu-backdrop {
