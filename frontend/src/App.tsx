@@ -329,7 +329,6 @@ export default function App() {
     setCategoryLabelDraft(serverSettings.categoryLabels);
     if (!serverSettings.exists) {
       setIsSectionChooserOpen(true);
-      setIsSideMenuOpen(true);
     }
     cacheExcludedCategories(user, serverSettings.excludedCategories);
     setLastServerSync(new Date().toLocaleTimeString());
