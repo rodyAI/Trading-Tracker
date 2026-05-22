@@ -122,6 +122,20 @@ button:disabled {
   line-height: 1.45;
 }
 
+.top-info {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.sync-status-line {
+  max-width: 680px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .panel,
 .summary-card,
 .trade-card {
@@ -156,6 +170,10 @@ label span,
 .summary-card strong {
   align-self: end;
   font-size: 2rem;
+}
+
+.portfolio-hero-card strong {
+  font-size: 2.35rem;
 }
 
 .summary-card small {
@@ -542,6 +560,24 @@ textarea {
   gap: 8px;
 }
 
+.diagnostics-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.diagnostics-list span {
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .side-menu-footer {
   display: grid;
   padding-top: 12px;
@@ -802,36 +838,13 @@ td small.recommendation-error {
   display: none;
 }
 
-.app-version-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 22px;
-  color: var(--muted);
-  font-size: 0.76rem;
-}
-
-.app-version-footer span {
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.footer-debug-button {
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--accent-strong);
-  background: rgba(255, 255, 255, 0.035);
-  font-size: 0.76rem;
-  font-weight: 800;
+.mobile-action-bar {
+  display: none;
 }
 
 .persistence-diagnostics {
-  max-width: 980px;
-  margin: 10px auto 0;
+  max-height: 240px;
+  margin: 0;
   padding: 12px;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -1022,7 +1035,7 @@ td small.recommendation-error {
 @media (max-width: 760px) {
   .page-shell {
     width: min(100% - 14px, 1480px);
-    padding: 12px 0 28px;
+    padding: 12px 0 calc(86px + env(safe-area-inset-bottom));
   }
 
   .top-band h1 {
@@ -1048,6 +1061,12 @@ td small.recommendation-error {
   .disclaimer-text {
     font-size: 0.68rem;
     line-height: 1.25;
+  }
+
+  .sync-status-line {
+    margin-top: 2px;
+    font-size: 0.68rem;
+    line-height: 1.3;
   }
 
   .summary-grid {
@@ -1080,6 +1099,10 @@ td small.recommendation-error {
   .summary-card strong {
     font-size: 1rem;
     line-height: 1.15;
+  }
+
+  .portfolio-hero-card strong {
+    font-size: 1.22rem;
   }
 
   .summary-card small {
@@ -1191,6 +1214,10 @@ td small.recommendation-error {
     gap: 12px;
   }
 
+  .diagnostics-list {
+    grid-template-columns: 1fr;
+  }
+
   .results-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -1299,6 +1326,30 @@ td small.recommendation-error {
   .mobile-details .icon-button {
     flex: 1 1 calc(50% - 6px);
     font-size: 0.78rem;
+  }
+
+  .mobile-action-bar {
+    position: fixed;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    left: 8px;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: 0.85fr 1.15fr 0.85fr;
+    gap: 8px;
+    padding: 8px;
+    background: rgba(10, 16, 22, 0.94);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+  }
+
+  .mobile-action-bar button {
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px;
+    font-size: 0.8rem;
   }
 
   .chart-preview {

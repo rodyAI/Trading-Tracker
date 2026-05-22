@@ -79,15 +79,16 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+const unavailableLabel = "Not enough data";
 
 const formatCurrency = (value: number | null | undefined) =>
-  value == null || !Number.isFinite(value) ? "Unavailable" : currencyFormatter.format(value);
+  value == null || !Number.isFinite(value) ? unavailableLabel : currencyFormatter.format(value);
 
 const formatPrice = (value: number | null | undefined) =>
-  value == null || !Number.isFinite(value) ? "Unavailable" : priceFormatter.format(value);
+  value == null || !Number.isFinite(value) ? unavailableLabel : priceFormatter.format(value);
 
 const formatPercent = (value: number | null | undefined) =>
-  value == null || !Number.isFinite(value) ? "Unavailable" : `${percentFormatter.format(value)}%`;
+  value == null || !Number.isFinite(value) ? unavailableLabel : `${percentFormatter.format(value)}%`;
 
 const createId = () => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -978,7 +979,7 @@ export default function App() {
       "Entry Price",
       "Stop Loss",
       "Take Profit",
-      "Recommended Sell",
+      "Sell Target",
       "Current Price",
       "P/L $",
       "P/L %",
@@ -1173,9 +1174,9 @@ export default function App() {
           className="icon-button"
           onClick={() => void handleRecalculateTrade(trade)}
           disabled={recalculatingTradeIds.has(trade.id)}
-          aria-label={`Recalculate ${trade.symbol} recommendation`}
+          aria-label={`Update ${trade.symbol} sell target`}
         >
-          {recalculatingTradeIds.has(trade.id) ? "Recalc..." : "Recalc"}
+          {recalculatingTradeIds.has(trade.id) ? "Updating..." : "Update Target"}
         </button>
       )}
       <button type="button" className="icon-button" onClick={() => handleEdit(trade)} aria-label={`Edit ${trade.symbol}`}>
@@ -1248,7 +1249,7 @@ export default function App() {
         <td>{formatPercent(metrics.profitLossPercent)}</td>
         <td>{formatCurrency(metrics.riskAmount)}</td>
         <td>{formatCurrency(metrics.rewardAmount)}</td>
-        <td>{metrics.riskRewardRatio == null ? "Unavailable" : metrics.riskRewardRatio.toFixed(2)}</td>
+        <td>{metrics.riskRewardRatio == null ? unavailableLabel : metrics.riskRewardRatio.toFixed(2)}</td>
         <td>
           <span className={`status-pill ${tone}`}>{metrics.status}</span>
         </td>
@@ -1291,7 +1292,7 @@ export default function App() {
             P/L %<strong>{formatPercent(metrics.profitLossPercent)}</strong>
           </span>
           <span>
-            Rec Sell<strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
+            Sell Target<strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
           </span>
         </div>
 
@@ -1322,11 +1323,11 @@ export default function App() {
               Reward<strong>{formatCurrency(metrics.rewardAmount)}</strong>
             </span>
             <span>
-              R/R<strong>{metrics.riskRewardRatio == null ? "Unavailable" : metrics.riskRewardRatio.toFixed(2)}</strong>
+              R/R<strong>{metrics.riskRewardRatio == null ? unavailableLabel : metrics.riskRewardRatio.toFixed(2)}</strong>
             </span>
           </div>
           <div className={`recommendation-box ${recommendationFailed ? "failed" : ""}`}>
-            <span>Recommended Sell</span>
+            <span>Sell Target</span>
             <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
             {!recommendationFailed && <p>{getRecommendationExplanation(trade)}</p>}
             {renderChartPreview(trade)}
@@ -1460,29 +1461,32 @@ export default function App() {
       </header>
 
       <section className="top-band">
-        <div>
+        <div className="top-info">
           <p className="tool-summary">
             Track positions, live prices, unrealized P/L, risk levels, and sell targets across your selected strategies.
           </p>
           <p className="disclaimer-text">Educational tracking only. Not financial advice.</p>
+          <p className="sync-status-line">
+            {lastServerSync ? `Last synced ${lastServerSync}` : "Waiting for first server sync"}
+            {statusMessage ? ` · ${statusMessage}` : ""}
+          </p>
         </div>
         <div className="summary-grid">
-          <article className={`summary-card ${portfolio.unrealized >= 0 ? "positive" : "negative"}`}>
-            <span>Total unrealized P/L</span>
+          <article className={`summary-card portfolio-hero-card ${portfolio.unrealized >= 0 ? "positive" : "negative"}`}>
+            <span>Total Open P/L</span>
             <strong>{formatCurrency(portfolio.unrealized)}</strong>
             <small>{formatPercent(portfolio.unrealizedPercent)}</small>
           </article>
           <article className={`summary-card ${portfolio.realized >= 0 ? "positive" : "negative"}`}>
-            <span>Total realized P/L</span>
+            <span>Realized P/L</span>
             <strong>{formatCurrency(portfolio.realized)}</strong>
             <small>{formatPercent(portfolio.realizedPercent)}</small>
           </article>
           <article className="summary-card">
-            <span>Tracked trades</span>
-            <strong>{isLoadingTrades ? "..." : numberFormatter.format(visibleTradeCount)}</strong>
+            <span>Positions</span>
+            <strong>{isLoadingTrades ? "..." : `${portfolio.openCount} open`}</strong>
             <small>
-              {portfolio.openCount} open / {portfolio.closedCount} closed included.{" "}
-              {excludedFromPortfolioTotalCount} excluded from total P/L. {statusMessage}
+              {visibleTradeCount} tracked · {portfolio.closedCount} closed · {excludedFromPortfolioTotalCount} excluded from total P/L.
             </small>
           </article>
         </div>
@@ -1589,8 +1593,8 @@ export default function App() {
             disabled={isRecalculatingRecommendations || activeTrades.length === 0}
           >
             {isRecalculatingRecommendations
-              ? `Recalculating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? activeTrades.length}...`
-              : `Recalculate ${activeCategory} Recommendations`}
+              ? `Updating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? activeTrades.length}...`
+              : `Update ${activeCategory} Sell Targets`}
           </button>
           {globalError && <p className="error-text">{globalError}</p>}
         </section>
@@ -1724,6 +1728,42 @@ export default function App() {
                   </div>
                 )}
               </section>
+
+              <section className="side-menu-section">
+                <h3>Diagnostics</h3>
+                <div className="diagnostics-list">
+                  <span>Version {buildInfo.version}</span>
+                  <span>Git build {buildInfo.builds.git}</span>
+                  <span>Firestore build {buildInfo.builds.firestore}</span>
+                  <span>Cloudflare build {buildInfo.builds.cloudflare}</span>
+                  <span>Ext build {buildInfo.builds.ext}</span>
+                  <span>UID {user.uid.slice(0, 8)}</span>
+                  {lastServerSync && <span>Last synced {lastServerSync}</span>}
+                </div>
+                <div className="side-menu-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      void syncServerState()
+                        .then(() => setStatusMessage("Loaded latest server state."))
+                        .catch((error) => {
+                          setGlobalError(error instanceof Error ? error.message : "Failed to load latest server state.");
+                        })
+                    }
+                  >
+                    Sync Now
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => void handlePersistenceCheck()}>
+                    Check Server Data
+                  </button>
+                </div>
+                {persistenceDiagnostics && (
+                  <pre className="persistence-diagnostics" aria-label="Firestore server diagnostics">
+                    {persistenceDiagnostics}
+                  </pre>
+                )}
+              </section>
             </div>
 
             <div className="side-menu-footer">
@@ -1816,7 +1856,7 @@ export default function App() {
                   <th>Entry</th>
                   <th>SL</th>
                   <th>TP</th>
-                  <th>Recommended Sell</th>
+                  <th>Sell Target</th>
                   <th>Current</th>
                   <th>P/L $</th>
                   <th>P/L %</th>
@@ -1849,17 +1889,23 @@ export default function App() {
           </div>
         </section>
       </section>
-      <footer className="app-version-footer" aria-label="Application version">
-        <span>Version {buildInfo.version}</span>
-        <span>Git build {buildInfo.builds.git}</span>
-        <span>Firestore build {buildInfo.builds.firestore}</span>
-        <span>Cloudflare build {buildInfo.builds.cloudflare}</span>
-        <span>Ext build {buildInfo.builds.ext}</span>
-        <span>UID {user.uid.slice(0, 8)}</span>
-        {lastServerSync && <span>Server sync {lastServerSync}</span>}
+      <div className="mobile-action-bar" aria-label="Quick actions">
         <button
           type="button"
-          className="footer-debug-button"
+          className="secondary-button"
+          onClick={() => {
+            setIsTradeFormOpen(true);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        >
+          Add
+        </button>
+        <button type="button" className="primary-button" onClick={() => void refreshPrices()} disabled={isRefreshing}>
+          {isRefreshing ? "Refreshing" : "Refresh"}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
           onClick={() =>
             void syncServerState()
               .then(() => setStatusMessage("Loaded latest server state."))
@@ -1868,17 +1914,9 @@ export default function App() {
               })
           }
         >
-          Sync from server
+          Sync
         </button>
-        <button type="button" className="footer-debug-button" onClick={() => void handlePersistenceCheck()}>
-          Check server data
-        </button>
-      </footer>
-      {persistenceDiagnostics && (
-        <pre className="persistence-diagnostics" aria-label="Firestore server diagnostics">
-          {persistenceDiagnostics}
-        </pre>
-      )}
+      </div>
     </main>
   );
 }
