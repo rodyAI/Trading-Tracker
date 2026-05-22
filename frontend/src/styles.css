@@ -270,7 +270,7 @@ label span,
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.7fr);
+  grid-template-columns: 1fr;
   gap: 20px;
   margin-bottom: 20px;
 }
@@ -417,8 +417,7 @@ label span,
   gap: 14px;
 }
 
-label,
-.control-panel {
+label {
   display: grid;
   gap: 8px;
 }
@@ -475,7 +474,8 @@ textarea {
 .form-actions,
 .utility-actions,
 .row-actions,
-.sort-controls {
+.sort-controls,
+.dashboard-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -602,6 +602,16 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+.advanced-details summary {
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.advanced-details[open] {
+  gap: 12px;
+}
+
 .side-menu-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -628,8 +638,13 @@ textarea {
 
 .side-menu-footer {
   display: grid;
+  gap: 10px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.side-menu-footer h3 {
+  margin: 0;
 }
 
 .dashboard-panel {
@@ -661,6 +676,14 @@ textarea {
   color: #d9eef4;
   text-align: center;
   justify-self: start;
+}
+
+.section-inclusion-status {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .section-total-toggle.active {
@@ -748,21 +771,23 @@ textarea {
   font-size: 0.75rem;
 }
 
+.sheet-tabs button .tab-inclusion {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
 .sheet-tabs button.excluded {
   border-color: rgba(245, 185, 76, 0.42);
 }
 
-.sheet-tabs button.excluded .tab-title::after {
-  content: "Excluded";
-  display: inline-block;
-  margin-left: 7px;
+.sheet-tabs button.excluded .tab-inclusion {
+  width: max-content;
   padding: 2px 6px;
   color: #281803;
   background: var(--warning);
   border-radius: 999px;
-  font-size: 0.62rem;
-  font-weight: 900;
-  vertical-align: middle;
 }
 
 .dashboard-sheet {
@@ -776,6 +801,12 @@ textarea {
   gap: 16px;
   align-items: end;
   margin-bottom: 18px;
+}
+
+.dashboard-toolbar-actions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
 }
 
 .table-scroll {
@@ -1277,6 +1308,15 @@ td small.recommendation-error {
     flex-direction: column;
   }
 
+  .dashboard-toolbar-actions {
+    justify-items: stretch;
+  }
+
+  .dashboard-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .desktop-table {
     display: none;
   }
@@ -1439,14 +1479,16 @@ td small.recommendation-error {
     white-space: nowrap;
   }
 
-  .sheet-tabs button.excluded .tab-title::after {
-    width: 7px;
-    height: 7px;
-    margin-left: 6px;
-    padding: 0;
-    color: transparent;
-    font-size: 0;
-    vertical-align: 1px;
+  .sheet-tabs button .tab-inclusion {
+    overflow: hidden;
+    font-size: 0.66rem;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sheet-tabs button.excluded .tab-inclusion {
+    max-width: 100%;
   }
 
   .dashboard-section-header {

@@ -103,7 +103,7 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const numberFormatter = new Intl.NumberFormat("en-US");
-const unavailableLabel = "Not enough data";
+const unavailableLabel = "More data needed";
 
 const formatCurrency = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? unavailableLabel : currencyFormatter.format(value);
@@ -1682,34 +1682,15 @@ export default function App() {
           )}
         </form>
 
-        <section className="panel control-panel">
-          <div className="section-heading">
-            <h2>Controls</h2>
-          </div>
-          <button type="button" className="primary-button full-width" onClick={() => void refreshPrices()} disabled={isRefreshing}>
-            {isRefreshing ? "Refreshing..." : "Refresh Prices"}
-          </button>
-          <button
-            type="button"
-            className="secondary-button full-width"
-            onClick={() => void recalculateSellRecommendations()}
-            disabled={isRecalculatingRecommendations || activeTrades.length === 0}
-          >
-            {isRecalculatingRecommendations
-              ? `Updating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? activeTrades.length}...`
-              : `Update ${getCategoryLabel(activeCategory)} Sell Targets`}
-          </button>
-          {globalError && <p className="error-text">{globalError}</p>}
-        </section>
       </section>
 
       {isSideMenuOpen && (
         <div className="side-menu-backdrop" role="presentation" onClick={() => setIsSideMenuOpen(false)}>
-          <aside className="side-menu" aria-label="Additional controls" onClick={(event) => event.stopPropagation()}>
+          <aside className="side-menu" aria-label="Tracker settings" onClick={(event) => event.stopPropagation()}>
             <div className="side-menu-header">
               <div>
                 <p className="eyebrow">Menu</p>
-                <h2>Controls</h2>
+                <h2>Settings</h2>
               </div>
               <button type="button" className="side-menu-close" onClick={() => setIsSideMenuOpen(false)} aria-label="Close menu">
                 ×
@@ -1720,19 +1701,19 @@ export default function App() {
               <section className="side-menu-section">
                 <h3>Market Data</h3>
                 <label>
-                  <span>Data source</span>
+                  <span>Price data source</span>
                   <select value={provider} onChange={(event) => setProvider(event.target.value as MarketDataProviderId)}>
-                    <option value="yahoo">Yahoo-compatible Worker endpoint</option>
-                    <option value="alphavantage">Alpha Vantage via Worker</option>
+                    <option value="yahoo">Yahoo market data</option>
+                    <option value="alphavantage">Alpha Vantage market data</option>
                   </select>
                 </label>
                 <p className="meta-text">
-                  This source is used for price refreshes and candle data. Prices are never mocked.
+                  Prices are pulled from live market data when available.
                 </p>
               </section>
 
               <section className="side-menu-section">
-                <h3>Dashboard Sections</h3>
+                <h3>Dashboard</h3>
                 <button
                   type="button"
                   className="secondary-button full-width"
@@ -1822,7 +1803,7 @@ export default function App() {
               </section>
 
               <section className="side-menu-section">
-                <h3>CSV</h3>
+                <h3>Data</h3>
                 <div className="side-menu-actions">
                   <button type="button" className="secondary-button" onClick={exportCsv} disabled={visibleTradeCount === 0}>Export CSV</button>
                   <button
@@ -1871,8 +1852,8 @@ export default function App() {
                 )}
               </section>
 
-              <section className="side-menu-section">
-                <h3>Diagnostics</h3>
+              <details className="side-menu-section advanced-details">
+                <summary>Advanced</summary>
                 <div className="diagnostics-list">
                   <span>Version {buildInfo.version}</span>
                   <span>Git build {buildInfo.builds.git}</span>
@@ -1880,6 +1861,7 @@ export default function App() {
                   <span>Cloudflare build {buildInfo.builds.cloudflare}</span>
                   <span>Ext build {buildInfo.builds.ext}</span>
                   <span>UID {user.uid.slice(0, 8)}</span>
+                  <span>Source: {provider === "yahoo" ? "Yahoo-compatible Worker endpoint" : "Alpha Vantage via Worker"}</span>
                   {lastServerSync && <span>Last synced {lastServerSync}</span>}
                 </div>
                 <div className="side-menu-actions">
@@ -1905,10 +1887,11 @@ export default function App() {
                     {persistenceDiagnostics}
                   </pre>
                 )}
-              </section>
+              </details>
             </div>
 
             <div className="side-menu-footer">
+              <h3>Account</h3>
               <button type="button" className="danger-button secondary-button" onClick={() => void signOutCurrentUser()}>
                 Log Out
               </button>
@@ -1921,14 +1904,31 @@ export default function App() {
         <div className="results-toolbar">
           <div>
             <h2>Dashboard</h2>
-            <p className="meta-text">Auto-refresh runs every 60 seconds while this page is open.</p>
+            <p className="meta-text">Prices refresh every 60 seconds.</p>
           </div>
-          <div className="sort-controls">
-            <span>Sort</span>
-            <button type="button" onClick={() => handleSort("symbol")}>Symbol{sortArrow("symbol")}</button>
-            <button type="button" onClick={() => handleSort("profitLoss")}>P/L{sortArrow("profitLoss")}</button>
-            <button type="button" onClick={() => handleSort("riskReward")}>R/R{sortArrow("riskReward")}</button>
-            <button type="button" onClick={() => handleSort("status")}>Status{sortArrow("status")}</button>
+          <div className="dashboard-toolbar-actions">
+            <div className="dashboard-actions">
+              <button type="button" className="primary-button" onClick={() => void refreshPrices()} disabled={isRefreshing}>
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void recalculateSellRecommendations()}
+                disabled={isRecalculatingRecommendations || activeTrades.length === 0}
+              >
+                {isRecalculatingRecommendations
+                  ? `Updating ${recommendationProgress?.current ?? 0}/${recommendationProgress?.total ?? activeTrades.length}...`
+                  : "Update sell targets"}
+              </button>
+            </div>
+            <div className="sort-controls">
+              <span>Sort</span>
+              <button type="button" onClick={() => handleSort("symbol")}>Symbol{sortArrow("symbol")}</button>
+              <button type="button" onClick={() => handleSort("profitLoss")}>P/L{sortArrow("profitLoss")}</button>
+              <button type="button" onClick={() => handleSort("riskReward")}>R/R{sortArrow("riskReward")}</button>
+              <button type="button" onClick={() => handleSort("status")}>Status{sortArrow("status")}</button>
+            </div>
           </div>
         </div>
 
@@ -1953,6 +1953,9 @@ export default function App() {
                 {formatCurrency(categorySummaries[category].totalProfitLoss)} /{" "}
                 {formatPercent(categorySummaries[category].totalProfitLossPercent)}
               </small>
+              <small className="tab-inclusion">
+                {excludedPortfolioCategorySet.has(category) ? "Excluded from total" : "Included in total"}
+              </small>
             </button>
           ))}
         </div>
@@ -1965,6 +1968,9 @@ export default function App() {
                 {numberFormatter.format(activeTrades.length)} trades, {activeSummary.openCount} open,{" "}
                 {activeSummary.closedCount} closed
               </span>
+              <small className="section-inclusion-status">
+                {excludedPortfolioCategorySet.has(activeCategory) ? "Excluded from total P/L" : "Included in total P/L"}
+              </small>
               <button
                 type="button"
                 className={`secondary-button section-total-toggle ${
@@ -1973,8 +1979,8 @@ export default function App() {
                 onClick={() => void handleToggleCategoryPortfolioInclusion(activeCategory)}
               >
                 {excludedPortfolioCategorySet.has(activeCategory)
-                  ? "Include in total"
-                  : "Exclude from total"}
+                  ? "Include in total P/L"
+                  : "Exclude from total P/L"}
               </button>
             </div>
             <div className={`sheet-pl ${activeSummary.unrealized >= 0 ? "positive" : "negative"}`}>
