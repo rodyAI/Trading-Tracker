@@ -2032,34 +2032,6 @@ export default function App() {
           </div>
         </section>
       </section>
-      <div className="mobile-action-bar" aria-label="Quick actions">
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => {
-            setIsTradeFormOpen(true);
-            window.scrollTo({ top: 0, behavior: "smooth" });
-          }}
-        >
-          Add
-        </button>
-        <button type="button" className="primary-button" onClick={() => void refreshPrices()} disabled={isRefreshing}>
-          {isRefreshing ? "Refreshing" : "Refresh"}
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() =>
-            void syncServerState()
-              .then(() => setStatusMessage("Loaded latest server state."))
-              .catch((error) => {
-                setGlobalError(error instanceof Error ? error.message : "Failed to load latest server state.");
-              })
-          }
-        >
-          Sync
-        </button>
-      </div>
     </main>
   );
 }
