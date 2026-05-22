@@ -18,6 +18,7 @@ export type CategoryLabels = Record<string, string>;
 export interface PortfolioSettings {
   excludedCategories: TradeCategory[];
   enabledCategories: TradeCategory[];
+  availableCategories: TradeCategory[];
   categoryLabels: CategoryLabels;
   exists?: boolean;
 }
@@ -30,6 +31,7 @@ export const defaultCategoryLabels = TRADE_CATEGORIES.reduce(
 const defaultSettings: PortfolioSettings = {
   excludedCategories: [],
   enabledCategories: [...TRADE_CATEGORIES],
+  availableCategories: [...TRADE_CATEGORIES],
   categoryLabels: defaultCategoryLabels,
   exists: false,
 };
@@ -56,12 +58,19 @@ const uniqueCategories = (categories: readonly unknown[]) => {
 const normalizeSettings = (data: Record<string, unknown> | undefined): PortfolioSettings => {
   const rawCategories = Array.isArray(data?.excludedCategories) ? data.excludedCategories : [];
   const rawEnabledCategories = Array.isArray(data?.enabledCategories) ? data.enabledCategories : TRADE_CATEGORIES;
+  const rawAvailableCategories = Array.isArray(data?.availableCategories) ? data.availableCategories : TRADE_CATEGORIES;
   const rawCategoryLabels =
     data?.categoryLabels && typeof data.categoryLabels === "object"
       ? data.categoryLabels as Record<string, unknown>
       : {};
   const enabledCategories = uniqueCategories(rawEnabledCategories);
-  const knownCategories = uniqueCategories([...TRADE_CATEGORIES, ...enabledCategories]);
+  const availableCategories = uniqueCategories([
+    ...TRADE_CATEGORIES,
+    ...rawAvailableCategories,
+    ...enabledCategories,
+    ...Object.keys(rawCategoryLabels),
+  ]);
+  const knownCategories = uniqueCategories([...TRADE_CATEGORIES, ...availableCategories, ...enabledCategories]);
   const categoryLabels = knownCategories.reduce((labels, category) => {
     const rawLabel = rawCategoryLabels[category];
     const label = typeof rawLabel === "string" ? rawLabel.trim() : "";
@@ -74,6 +83,7 @@ const normalizeSettings = (data: Record<string, unknown> | undefined): Portfolio
   return {
     excludedCategories: uniqueCategories(rawCategories),
     enabledCategories: enabledCategories.length > 0 ? enabledCategories : [...TRADE_CATEGORIES],
+    availableCategories,
     categoryLabels,
   };
 };
@@ -106,7 +116,13 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
   const enabledSet = new Set(enabledCategories);
   const excludedCategories = uniqueCategories(settings.excludedCategories).filter((category) => enabledSet.has(category));
   const excludedSet = new Set(excludedCategories);
-  const knownCategories = uniqueCategories([...TRADE_CATEGORIES, ...enabledCategories]);
+  const availableCategories = uniqueCategories([
+    ...TRADE_CATEGORIES,
+    ...settings.availableCategories,
+    ...enabledCategories,
+    ...Object.keys(settings.categoryLabels ?? {}),
+  ]);
+  const knownCategories = uniqueCategories([...TRADE_CATEGORIES, ...availableCategories, ...enabledCategories]);
   const categoryLabels = knownCategories.reduce((labels, category) => {
     const label = settings.categoryLabels?.[category]?.trim() || category;
     return { ...labels, [category]: label };
@@ -116,6 +132,7 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
   batch.set(ref, {
     excludedCategories,
     enabledCategories,
+    availableCategories,
     categoryLabels,
     updatedAt: serverTimestamp(),
   });
@@ -138,6 +155,7 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
   if (
     !sameCategories(savedSettings.excludedCategories, excludedCategories) ||
     !sameCategories(savedSettings.enabledCategories, enabledCategories) ||
+    !sameCategories(savedSettings.availableCategories, availableCategories) ||
     knownCategories.some((category) => savedSettings.categoryLabels[category] !== categoryLabels[category])
   ) {
     throw new Error("Firestore did not confirm the portfolio settings update. Please try again.");
@@ -152,6 +170,7 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
   ]);
   const settingsCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).excludedCategories : [];
   const enabledCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).enabledCategories : [...TRADE_CATEGORIES];
+  const availableCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).availableCategories : [...TRADE_CATEGORIES];
   const categoryLabels = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).categoryLabels : defaultCategoryLabels;
   const ledgerCategories = excludedSnapshot.docs
     .map((item) => item.data().category)
@@ -160,6 +179,6 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
   const excludedCategories = [...new Set([...settingsCategories, ...ledgerCategories])];
 
   return settingsSnapshot.exists() || excludedSnapshot.docs.length > 0
-    ? { excludedCategories, enabledCategories, categoryLabels, exists: true }
+    ? { excludedCategories, enabledCategories, availableCategories, categoryLabels, exists: true }
     : defaultSettings;
 };

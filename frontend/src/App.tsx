@@ -260,6 +260,7 @@ export default function App() {
   const [importCategory, setImportCategory] = useState<TradeCategory>("Swing");
   const [excludedPortfolioCategories, setExcludedPortfolioCategories] = useState<TradeCategory[]>([]);
   const [enabledTradeCategories, setEnabledTradeCategories] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
+  const [availableTradeCategories, setAvailableTradeCategories] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
   const [sectionSelectionDraft, setSectionSelectionDraft] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
   const [categoryLabels, setCategoryLabels] = useState<CategoryLabels>(() => defaultCategoryLabels);
   const [categoryLabelDraft, setCategoryLabelDraft] = useState<CategoryLabels>(() => defaultCategoryLabels);
@@ -303,6 +304,7 @@ export default function App() {
     );
     setExcludedPortfolioCategories(serverSettings.excludedCategories);
     setEnabledTradeCategories(serverSettings.enabledCategories);
+    setAvailableTradeCategories(serverSettings.availableCategories);
     setSectionSelectionDraft(serverSettings.enabledCategories);
     setCategoryLabels(serverSettings.categoryLabels);
     setCategoryLabelDraft(serverSettings.categoryLabels);
@@ -326,6 +328,7 @@ export default function App() {
       setTrades([]);
       setExcludedPortfolioCategories([]);
       setEnabledTradeCategories([...TRADE_CATEGORIES]);
+      setAvailableTradeCategories([...TRADE_CATEGORIES]);
       setSectionSelectionDraft([...TRADE_CATEGORIES]);
       setCategoryLabels(defaultCategoryLabels);
       setCategoryLabelDraft(defaultCategoryLabels);
@@ -668,10 +671,12 @@ export default function App() {
       const savedSettings = await savePortfolioSettings(user, {
         excludedCategories: nextCategories,
         enabledCategories: enabledTradeCategories,
+        availableCategories: availableTradeCategories,
         categoryLabels,
       });
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
       setEnabledTradeCategories(savedSettings.enabledCategories);
+      setAvailableTradeCategories(savedSettings.availableCategories);
       setSectionSelectionDraft(savedSettings.enabledCategories);
       setCategoryLabels(savedSettings.categoryLabels);
       setCategoryLabelDraft(savedSettings.categoryLabels);
@@ -734,6 +739,11 @@ export default function App() {
       nextEnabledCategories.includes(category),
     );
     const nextCategoryLabels = normalizeCategoryLabels(categoryLabelDraft);
+    const nextAvailableCategories = uniqueCategories([
+      ...availableTradeCategories,
+      ...Object.keys(nextCategoryLabels),
+      ...nextEnabledCategories,
+    ]);
 
     setIsSavingSections(true);
     setGlobalError("");
@@ -741,9 +751,11 @@ export default function App() {
       const savedSettings = await savePortfolioSettings(user, {
         excludedCategories: nextExcludedCategories,
         enabledCategories: nextEnabledCategories,
+        availableCategories: nextAvailableCategories,
         categoryLabels: nextCategoryLabels,
       });
       setEnabledTradeCategories(savedSettings.enabledCategories);
+      setAvailableTradeCategories(savedSettings.availableCategories);
       setSectionSelectionDraft(savedSettings.enabledCategories);
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
       setCategoryLabels(savedSettings.categoryLabels);
@@ -929,6 +941,8 @@ export default function App() {
         portfolioSettings.excludedCategories.length === 0 ? "none" : portfolioSettings.excludedCategories.join(", ");
       const enabledCategoryText =
         portfolioSettings.enabledCategories.length === 0 ? "none" : portfolioSettings.enabledCategories.join(", ");
+      const availableCategoryText =
+        portfolioSettings.availableCategories.length === 0 ? "none" : portfolioSettings.availableCategories.join(", ");
 
       setPersistenceDiagnostics(
         [
@@ -942,6 +956,7 @@ export default function App() {
           `Visible trade ids: ${visibleTradeText}`,
           `Server excluded tabs: ${excludedCategoryText}`,
           `Server enabled tabs: ${enabledCategoryText}`,
+          `Server available tabs: ${availableCategoryText}`,
         ].join("\n"),
       );
       setStatusMessage("Server data check complete.");
@@ -986,11 +1001,12 @@ export default function App() {
     () =>
       uniqueCategories([
         ...TRADE_CATEGORIES,
+        ...availableTradeCategories,
         ...enabledTradeCategories,
         ...sectionSelectionDraft,
         ...trades.map((trade) => trade.category ?? "Swing"),
       ]),
-    [enabledTradeCategories, sectionSelectionDraft, trades],
+    [availableTradeCategories, enabledTradeCategories, sectionSelectionDraft, trades],
   );
 
   const tradesByCategory = useMemo(
@@ -1741,6 +1757,7 @@ export default function App() {
                     <div className="section-choice-grid">
                       {uniqueCategories([
                         ...TRADE_CATEGORIES,
+                        ...availableTradeCategories,
                         ...enabledTradeCategories,
                         ...sectionSelectionDraft,
                         ...Object.keys(categoryLabelDraft),
