@@ -1713,26 +1713,30 @@ export default function App() {
               </section>
 
               <section className="side-menu-section">
-                <h3>Dashboard</h3>
-                <button
-                  type="button"
-                  className="secondary-button full-width"
-                  onClick={() => {
-                    setSectionSelectionDraft(enabledTradeCategories);
-                    setCategoryLabelDraft(categoryLabels);
-                    setCustomSectionName("");
-                    setCustomSectionError("");
-                    setIsSectionChooserOpen((current) => !current);
-                    setIsImportChooserOpen(false);
-                  }}
-                >
-                  Manage Selections
-                </button>
+                <div className="section-heading disclosure-heading">
+                  <h3>Strategies</h3>
+                  <button
+                    type="button"
+                    className="disclosure-button"
+                    onClick={() => {
+                      setSectionSelectionDraft(enabledTradeCategories);
+                      setCategoryLabelDraft(categoryLabels);
+                      setCustomSectionName("");
+                      setCustomSectionError("");
+                      setIsSectionChooserOpen((current) => !current);
+                      setIsImportChooserOpen(false);
+                    }}
+                    aria-expanded={isSectionChooserOpen}
+                    aria-controls="strategy-picker-panel"
+                  >
+                    {isSectionChooserOpen ? "Hide" : "Expand"}
+                  </button>
+                </div>
                 {isSectionChooserOpen && (
-                  <div className="section-picker-panel" aria-label="Dashboard section selection">
+                  <div id="strategy-picker-panel" className="section-picker-panel" aria-label="Strategy selection">
                     <div>
-                      <h2>Choose Dashboard Sections</h2>
-                      <p className="meta-text">Only selected sections appear in the add form, import menu, and dashboard tabs.</p>
+                      <h2>Choose Strategies</h2>
+                      <p className="meta-text">Only selected strategies appear in the add form, import menu, and dashboard tabs.</p>
                     </div>
                     <div className="section-choice-grid">
                       {uniqueCategories([
@@ -1764,7 +1768,7 @@ export default function App() {
                     </div>
                     <div className="custom-section-row">
                       <label>
-                        <span>Custom section</span>
+                        <span>Custom strategy</span>
                         <input
                           value={customSectionName}
                           onChange={(event) => {
@@ -1775,13 +1779,13 @@ export default function App() {
                         />
                       </label>
                       <button type="button" className="secondary-button" onClick={addCustomSectionDraft}>
-                        Add Section
+                        Add Strategy
                       </button>
                     </div>
                     {customSectionError && <small className="field-error">{customSectionError}</small>}
                     <div className="form-actions">
                       <button type="button" className="primary-button" onClick={() => void saveSectionSelection()} disabled={isSavingSections}>
-                        {isSavingSections ? "Saving..." : "Save Selections"}
+                        {isSavingSections ? "Saving..." : "Save Strategies"}
                       </button>
                       <button
                         type="button"
