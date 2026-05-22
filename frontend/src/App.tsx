@@ -1909,7 +1909,7 @@ export default function App() {
           <div className="dashboard-toolbar-actions">
             <div className="dashboard-actions">
               <button type="button" className="primary-button" onClick={() => void refreshPrices()} disabled={isRefreshing}>
-                {isRefreshing ? "Refreshing..." : "Refresh"}
+                {isRefreshing ? "Refreshing..." : "Refresh Prices"}
               </button>
               <button
                 type="button"
