@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDocFromServer,
   getDocsFromServer,
@@ -181,4 +182,18 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
   return settingsSnapshot.exists() || excludedSnapshot.docs.length > 0
     ? { excludedCategories, enabledCategories, availableCategories, categoryLabels, exists: true }
     : defaultSettings;
+};
+
+export const deletePortfolioSettingsData = async (user: User) => {
+  const db = requireDb();
+  const excludedSnapshot = await getDocsFromServer(excludedCategoriesCollection(user));
+
+  for (let index = 0; index < excludedSnapshot.docs.length; index += 450) {
+    const batch = writeBatch(db);
+    excludedSnapshot.docs.slice(index, index + 450).forEach((item) => batch.delete(item.ref));
+    await batch.commit();
+  }
+
+  await deleteDoc(settingsDoc(user));
+  await waitForPendingWrites(db);
 };

@@ -348,3 +348,26 @@ export const replaceUserTrades = async (user: User, trades: TrackedTrade[]) => {
   await waitForPendingWrites(requireDb());
   return normalizedTrades;
 };
+
+export const deleteAllUserTradeData = async (user: User) => {
+  const db = requireDb();
+  const [tradeSnapshot, deletedTradeSnapshot, deletedSymbolSnapshot] = await Promise.all([
+    getDocsFromServer(tradesCollection(user)),
+    getDocsFromServer(deletedTradesCollection(user)),
+    getDocsFromServer(deletedSymbolsCollection(user)),
+  ]);
+  const refs = [
+    ...tradeSnapshot.docs.map((item) => item.ref),
+    ...deletedTradeSnapshot.docs.map((item) => item.ref),
+    ...deletedSymbolSnapshot.docs.map((item) => item.ref),
+  ];
+
+  for (let index = 0; index < refs.length; index += 450) {
+    const batch = writeBatch(db);
+    refs.slice(index, index + 450).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  await waitForPendingWrites(db);
+  return refs.length;
+};

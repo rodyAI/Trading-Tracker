@@ -14,6 +14,7 @@ import {
   type User,
 } from "./firebase/client";
 import {
+  deleteAllUserTradeData,
   deleteUserTrade,
   importUserTrades,
   loadTradePersistenceDiagnostics,
@@ -22,6 +23,7 @@ import {
 } from "./services/firebaseTradeStore";
 import {
   defaultCategoryLabels,
+  deletePortfolioSettingsData,
   loadPortfolioSettingsFromServer,
   savePortfolioSettings,
   type CategoryLabels,
@@ -202,6 +204,15 @@ const cacheExcludedCategories = (user: User, excludedCategories: TradeCategory[]
   );
 };
 
+const clearLocalAppStorage = (user: User | null) => {
+  if (typeof window === "undefined") return;
+  if (user) window.localStorage.removeItem(portfolioSettingsStorageKey(user));
+  window.localStorage.removeItem(PROVIDER_STORAGE_KEY);
+  Object.keys(window.localStorage)
+    .filter((key) => key.startsWith(PORTFOLIO_SETTINGS_STORAGE_PREFIX))
+    .forEach((key) => window.localStorage.removeItem(key));
+};
+
 const withTimeout = async <T,>(promise: Promise<T>, message: string, timeoutMs = REFRESH_STEP_TIMEOUT_MS) => {
   let timeoutId: number | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -297,6 +308,7 @@ export default function App() {
   const [lastServerSync, setLastServerSync] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRecalculatingRecommendations, setIsRecalculatingRecommendations] = useState(false);
+  const [isDeletingAccountData, setIsDeletingAccountData] = useState(false);
   const [recommendationProgress, setRecommendationProgress] = useState<{ current: number; total: number } | null>(null);
   const [recalculatingTradeIds, setRecalculatingTradeIds] = useState<Set<string>>(() => new Set());
   const [isLoadingTrades, setIsLoadingTrades] = useState(true);
@@ -924,6 +936,54 @@ export default function App() {
       setDeleteResult(deleteMessage);
       setStatusMessage(`${trade.symbol} delete failed.`);
       window.alert(deleteMessage);
+    }
+  };
+
+  const handleDeleteAllAccountData = async () => {
+    if (!user || isDeletingAccountData) return;
+
+    const confirmed = window.confirm(
+      "Delete all trades, strategy settings, and local tracker cache for this account? This cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    setIsDeletingAccountData(true);
+    setGlobalError("");
+    setDeleteResult("");
+    setStatusMessage("Deleting account data from Firestore...");
+
+    try {
+      const deletedTradeDocumentCount = await deleteAllUserTradeData(user);
+      await deletePortfolioSettingsData(user);
+      clearLocalAppStorage(user);
+      setTrades([]);
+      setExcludedPortfolioCategories([]);
+      setEnabledTradeCategories([...TRADE_CATEGORIES]);
+      setAvailableTradeCategories([...TRADE_CATEGORIES]);
+      setSectionSelectionDraft([...TRADE_CATEGORIES]);
+      setCategoryLabels(defaultCategoryLabels);
+      setCategoryLabelDraft(defaultCategoryLabels);
+      setActiveCategory("Swing");
+      setForm(emptyForm);
+      setPersistenceDiagnostics("");
+      setLastServerSync(new Date().toLocaleTimeString());
+      setDeleteResult(`Deleted ${deletedTradeDocumentCount} trade-related Firestore document${deletedTradeDocumentCount === 1 ? "" : "s"}.`);
+      setStatusMessage("Account data deleted from Firestore.");
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : "Failed to delete account data.");
+      setStatusMessage("Account data delete failed.");
+    } finally {
+      setIsDeletingAccountData(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    const signedInUser = user;
+    try {
+      await signOutCurrentUser();
+      clearLocalAppStorage(signedInUser);
+    } catch (error) {
+      setGlobalError(error instanceof Error ? error.message : "Failed to log out.");
     }
   };
 
@@ -1880,6 +1940,27 @@ export default function App() {
                 )}
               </section>
 
+              <details className="side-menu-section legal-details">
+                <summary>Privacy, Data, and Disclaimer</summary>
+                <div className="legal-copy">
+                  <p>
+                    This tracker stores your symbols, quantities, entry prices, stops, targets, notes, strategy names,
+                    and settings in Firebase Firestore under your signed-in user ID.
+                  </p>
+                  <p>
+                    Price data is requested from the configured market-data source. Live market data may be delayed,
+                    unavailable, or inaccurate. Verify prices with your broker before trading.
+                  </p>
+                  <p>
+                    This app is for tracking and educational purposes only. It does not provide financial advice.
+                  </p>
+                  <p>
+                    Use Export CSV to keep a copy of your data. Use Delete Account Data to permanently remove your
+                    tracker data from Firestore.
+                  </p>
+                </div>
+              </details>
+
               <details className="side-menu-section advanced-details">
                 <summary>Advanced</summary>
                 <div className="diagnostics-list">
@@ -1920,7 +2001,15 @@ export default function App() {
 
             <div className="side-menu-footer">
               <h3>Account</h3>
-              <button type="button" className="danger-button secondary-button" onClick={() => void signOutCurrentUser()}>
+              <button
+                type="button"
+                className="danger-button secondary-button"
+                onClick={() => void handleDeleteAllAccountData()}
+                disabled={isDeletingAccountData}
+              >
+                {isDeletingAccountData ? "Deleting..." : "Delete Account Data"}
+              </button>
+              <button type="button" className="danger-button secondary-button" onClick={() => void handleSignOut()}>
                 Log Out
               </button>
             </div>

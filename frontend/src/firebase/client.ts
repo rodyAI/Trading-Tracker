@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 import {
   GoogleAuthProvider,
   type Auth,
@@ -27,6 +28,7 @@ const firebaseConfig = {
   ...requiredConfig,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
+const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY;
 
 export const firebaseRuntimeInfo = {
   projectId: requiredConfig.projectId ?? "missing",
@@ -52,6 +54,12 @@ export const missingFirebaseConfigKeys = Object.entries(requiredConfig)
 export const isFirebaseConfigured = missingFirebaseConfigKeys.length === 0;
 
 const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
+if (app && appCheckSiteKey) {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider(appCheckSiteKey),
+    isTokenAutoRefreshEnabled: true,
+  });
+}
 const googleProvider = new GoogleAuthProvider();
 
 export const auth: Auth | null = app ? getAuth(app) : null;

@@ -109,7 +109,10 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 
 VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
+VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY=your_app_check_recaptcha_v3_site_key
 ```
+
+`VITE_FIREBASE_APPCHECK_RECAPTCHA_SITE_KEY` is optional in local development. For production, create a Firebase App Check web provider in the Firebase Console, add the key here, redeploy, then enable App Check enforcement after testing.
 
 No Firebase Functions are deployed, so this project can stay on Firebase Spark/free. If you later want server-side market-data API keys, provider proxying, or more reliable CORS behavior, add Functions back and upgrade that Firebase project to Blaze.
 

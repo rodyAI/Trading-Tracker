@@ -6,8 +6,137 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    match /users/{userId}/{document=**} {
-      allow read, create, update, delete: if isSignedInOwner(userId);
+    function tradeFields() {
+      return [
+        "id",
+        "category",
+        "symbol",
+        "quantity",
+        "entryPrice",
+        "stopLoss",
+        "takeProfit",
+        "notes",
+        "entryDate",
+        "tags",
+        "isClosed",
+        "exitPrice",
+        "exitDate",
+        "excludeFromPortfolioTotals",
+        "isDeleted",
+        "deletedAt",
+        "createdAt",
+        "updatedAt"
+      ];
+    }
+
+    function validOptionalNumber(field) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] == null ||
+        request.resource.data[field] is number;
+    }
+
+    function validOptionalString(field) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] is string;
+    }
+
+    function validOptionalBool(field) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] is bool;
+    }
+
+    function validOptionalList(field) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] is list;
+    }
+
+    function validOptionalTimestamp(field) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] is timestamp;
+    }
+
+    function validTrade(tradeId) {
+      return request.resource.data.keys().hasOnly(tradeFields()) &&
+        (!("id" in request.resource.data) || request.resource.data.id == tradeId) &&
+        request.resource.data.symbol is string &&
+        request.resource.data.symbol.size() > 0 &&
+        request.resource.data.symbol.size() <= 16 &&
+        request.resource.data.quantity is number &&
+        request.resource.data.quantity > 0 &&
+        request.resource.data.entryPrice is number &&
+        request.resource.data.entryPrice > 0 &&
+        (!("stopLoss" in request.resource.data) ||
+          request.resource.data.stopLoss == null ||
+          request.resource.data.stopLoss < request.resource.data.entryPrice) &&
+        (!("takeProfit" in request.resource.data) ||
+          request.resource.data.takeProfit == null ||
+          request.resource.data.takeProfit > request.resource.data.entryPrice) &&
+        (!("exitPrice" in request.resource.data) ||
+          request.resource.data.exitPrice == null ||
+          request.resource.data.exitPrice > 0) &&
+        validOptionalString("category") &&
+        validOptionalNumber("stopLoss") &&
+        validOptionalNumber("takeProfit") &&
+        validOptionalString("notes") &&
+        validOptionalString("entryDate") &&
+        validOptionalList("tags") &&
+        validOptionalBool("isClosed") &&
+        validOptionalNumber("exitPrice") &&
+        validOptionalString("exitDate") &&
+        validOptionalBool("excludeFromPortfolioTotals") &&
+        validOptionalBool("isDeleted") &&
+        validOptionalTimestamp("deletedAt") &&
+        validOptionalTimestamp("createdAt") &&
+        validOptionalTimestamp("updatedAt");
+    }
+
+    function validPortfolioSettings() {
+      return request.resource.data.keys().hasOnly([
+        "excludedCategories",
+        "enabledCategories",
+        "availableCategories",
+        "categoryLabels",
+        "updatedAt"
+      ]) &&
+        request.resource.data.excludedCategories is list &&
+        request.resource.data.enabledCategories is list &&
+        request.resource.data.availableCategories is list &&
+        request.resource.data.categoryLabels is map &&
+        validOptionalTimestamp("updatedAt");
+    }
+
+    function validExcludedCategory() {
+      return request.resource.data.keys().hasOnly(["category", "updatedAt"]) &&
+        request.resource.data.category is string &&
+        request.resource.data.category.size() > 0 &&
+        validOptionalTimestamp("updatedAt");
+    }
+
+    match /users/{userId}/trades/{tradeId} {
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if isSignedInOwner(userId) && validTrade(tradeId);
+    }
+
+    match /users/{userId}/settings/{settingsId} {
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if isSignedInOwner(userId) &&
+        settingsId == "portfolioTotals" &&
+        validPortfolioSettings();
+    }
+
+    match /users/{userId}/excludedPortfolioCategories/{categoryId} {
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if isSignedInOwner(userId) && validExcludedCategory();
+    }
+
+    match /users/{userId}/deletedTrades/{tradeId} {
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if false;
+    }
+
+    match /users/{userId}/deletedSymbols/{symbolId} {
+      allow read, delete: if isSignedInOwner(userId);
+      allow create, update: if false;
     }
 
     match /{document=**} {

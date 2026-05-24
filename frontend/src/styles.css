@@ -613,14 +613,28 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
-.advanced-details summary {
+.advanced-details summary,
+.legal-details summary {
   color: var(--accent-strong);
   cursor: pointer;
   font-weight: 900;
 }
 
-.advanced-details[open] {
+.advanced-details[open],
+.legal-details[open] {
   gap: 12px;
+}
+
+.legal-copy {
+  display: grid;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.legal-copy p {
+  margin: 0;
 }
 
 .side-menu-actions {
