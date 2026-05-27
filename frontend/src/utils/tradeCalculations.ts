@@ -71,13 +71,14 @@ export interface RiskManagementFormValues {
 export interface RiskManagementResult {
   quantity: number;
   riskPerShare: number;
-  rewardPerShare: number;
+  rewardPerShare: number | null;
   actualRiskAmount: number;
-  potentialRewardAmount: number;
-  rewardRiskRatio: number;
-  requiredCapital: number;
+  potentialRewardAmount: number | null;
+  rewardRiskRatio: number | null;
+  investmentAmount: number;
   portfolioRiskPercent: number;
   portfolioAllocationPercent: number;
+  exceedsPortfolioValue: boolean;
 }
 
 export interface RiskManagementValidationResult {
@@ -115,7 +116,7 @@ export const calculateRiskManagementPlan = (
   const portfolioValue = toNumber(form.portfolioValue);
   const desiredRiskAmount = toNumber(form.desiredRiskAmount);
   const entryPrice = toNumber(form.entryPrice);
-  const targetPrice = toNumber(form.targetPrice);
+  const targetPrice = form.targetPrice.trim() ? toNumber(form.targetPrice) : null;
   const stopLossPrice = toNumber(form.stopLossPrice);
   const errors: RiskManagementValidationResult["errors"] = {};
 
@@ -124,7 +125,9 @@ export const calculateRiskManagementPlan = (
     errors.desiredRiskAmount = "Desired risk amount must be greater than 0.";
   }
   if (entryPrice == null || entryPrice <= 0) errors.entryPrice = "Entry price must be greater than 0.";
-  if (targetPrice == null || targetPrice <= 0) errors.targetPrice = "Target price must be greater than 0.";
+  if (form.targetPrice.trim() && (targetPrice == null || targetPrice <= 0)) {
+    errors.targetPrice = "Target price must be greater than 0 when provided.";
+  }
   if (stopLossPrice == null || stopLossPrice <= 0) errors.stopLossPrice = "Stop loss price must be greater than 0.";
 
   if (entryPrice != null && targetPrice != null && form.direction === "long" && targetPrice <= entryPrice) {
@@ -145,14 +148,13 @@ export const calculateRiskManagementPlan = (
     portfolioValue == null ||
     desiredRiskAmount == null ||
     entryPrice == null ||
-    targetPrice == null ||
     stopLossPrice == null
   ) {
     return { errors };
   }
 
   const riskPerShare = Math.abs(entryPrice - stopLossPrice);
-  const rewardPerShare = Math.abs(targetPrice - entryPrice);
+  const rewardPerShare = targetPrice == null ? null : Math.abs(targetPrice - entryPrice);
   const quantity = Math.floor(desiredRiskAmount / riskPerShare);
 
   if (quantity < 1) {
@@ -164,8 +166,8 @@ export const calculateRiskManagementPlan = (
   }
 
   const actualRiskAmount = quantity * riskPerShare;
-  const potentialRewardAmount = quantity * rewardPerShare;
-  const requiredCapital = quantity * entryPrice;
+  const potentialRewardAmount = rewardPerShare == null ? null : quantity * rewardPerShare;
+  const investmentAmount = quantity * entryPrice;
 
   return {
     errors,
@@ -175,10 +177,11 @@ export const calculateRiskManagementPlan = (
       rewardPerShare,
       actualRiskAmount,
       potentialRewardAmount,
-      rewardRiskRatio: rewardPerShare / riskPerShare,
-      requiredCapital,
+      rewardRiskRatio: rewardPerShare == null ? null : rewardPerShare / riskPerShare,
+      investmentAmount,
       portfolioRiskPercent: (actualRiskAmount / portfolioValue) * 100,
-      portfolioAllocationPercent: (requiredCapital / portfolioValue) * 100,
+      portfolioAllocationPercent: (investmentAmount / portfolioValue) * 100,
+      exceedsPortfolioValue: investmentAmount > portfolioValue,
     },
   };
 };

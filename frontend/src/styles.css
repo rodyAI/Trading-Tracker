@@ -441,6 +441,18 @@ label span,
   color: var(--muted);
 }
 
+.risk-result-hero.over-portfolio strong,
+.risk-result-hero.over-portfolio small,
+.metric-grid .metric-warning,
+.metric-grid .metric-warning strong {
+  color: #ff9d9a;
+}
+
+.metric-grid .metric-warning {
+  background: rgba(239, 111, 108, 0.1);
+  border-color: rgba(239, 111, 108, 0.42);
+}
+
 .form-optional-details {
   margin-top: 14px;
   padding: 12px;

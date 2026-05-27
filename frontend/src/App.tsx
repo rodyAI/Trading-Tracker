@@ -1911,14 +1911,14 @@ export default function App() {
                   {riskErrors.entryPrice && <small className="field-error">{riskErrors.entryPrice}</small>}
                 </label>
                 <label>
-                  <span>Target price</span>
+                  <span>Target price (optional)</span>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
                     value={riskForm.targetPrice}
                     onChange={handleRiskFormChange("targetPrice")}
-                    placeholder={riskForm.direction === "long" ? "56.00" : "44.00"}
+                    placeholder="Optional"
                   />
                   {riskErrors.targetPrice && <small className="field-error">{riskErrors.targetPrice}</small>}
                 </label>
@@ -1943,14 +1943,20 @@ export default function App() {
 
               {riskResult && (
                 <div className="risk-result-panel" aria-live="polite">
-                  <div className="risk-result-hero">
+                  <div className={`risk-result-hero ${riskResult.exceedsPortfolioValue ? "over-portfolio" : ""}`}>
                     <span>Suggested position size</span>
                     <strong>{numberFormatter.format(riskResult.quantity)} shares</strong>
-                    <small>{formatCurrency(riskResult.requiredCapital)} required capital</small>
+                    <small>
+                      Investment amount: {formatCurrency(riskResult.investmentAmount)}
+                      {riskResult.exceedsPortfolioValue ? " · Higher than total portfolio" : ""}
+                    </small>
                   </div>
                   <div className="metric-grid risk-result-grid">
                     <span>
                       Actual risk<strong>{formatCurrency(riskResult.actualRiskAmount)}</strong>
+                    </span>
+                    <span className={riskResult.exceedsPortfolioValue ? "metric-warning" : ""}>
+                      Investment amount<strong>{formatCurrency(riskResult.investmentAmount)}</strong>
                     </span>
                     <span>
                       Portfolio risk<strong>{formatPercent(riskResult.portfolioRiskPercent)}</strong>
@@ -1959,7 +1965,7 @@ export default function App() {
                       Potential profit<strong>{formatCurrency(riskResult.potentialRewardAmount)}</strong>
                     </span>
                     <span>
-                      Reward / risk<strong>{riskResult.rewardRiskRatio.toFixed(2)}</strong>
+                      Reward / risk<strong>{riskResult.rewardRiskRatio == null ? unavailableLabel : riskResult.rewardRiskRatio.toFixed(2)}</strong>
                     </span>
                     <span>
                       Risk per share<strong>{formatCurrency(riskResult.riskPerShare)}</strong>
