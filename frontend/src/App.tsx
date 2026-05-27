@@ -31,11 +31,14 @@ import {
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
   TRADE_CATEGORIES,
+  RiskManagementFormValues,
+  RiskManagementResult,
   TradeCategory,
   TradeFormValues,
   TrackedTrade,
   calculateProfitLossDollars,
   calculateProfitLossPercent,
+  calculateRiskManagementPlan,
   calculateRewardAmount,
   calculateRiskAmount,
   calculateRiskRewardRatio,
@@ -64,6 +67,15 @@ const emptyForm: TradeFormValues = {
   entryDate: "",
   tags: "",
   excludeFromPortfolioTotals: false,
+};
+
+const emptyRiskManagementForm: RiskManagementFormValues = {
+  direction: "long",
+  portfolioValue: "",
+  desiredRiskAmount: "",
+  entryPrice: "",
+  targetPrice: "",
+  stopLossPrice: "",
 };
 
 const normalizeCategoryLabels = (labels: CategoryLabels): CategoryLabels =>
@@ -278,6 +290,9 @@ export default function App() {
   const [trades, setTrades] = useState<TrackedTrade[]>([]);
   const [form, setForm] = useState<TradeFormValues>(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof TradeFormValues, string>>>({});
+  const [riskForm, setRiskForm] = useState<RiskManagementFormValues>(emptyRiskManagementForm);
+  const [riskErrors, setRiskErrors] = useState<Partial<Record<keyof RiskManagementFormValues, string>>>({});
+  const [riskResult, setRiskResult] = useState<RiskManagementResult | null>(null);
   const [provider, setProvider] = useState<MarketDataProviderId>(() => {
     if (typeof window === "undefined") return "yahoo";
     const saved = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
@@ -300,6 +315,7 @@ export default function App() {
   const [isImportChooserOpen, setIsImportChooserOpen] = useState(false);
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [isTradeFormOpen, setIsTradeFormOpen] = useState(false);
+  const [isRiskCalculatorOpen, setIsRiskCalculatorOpen] = useState(false);
   const [isTradeOptionalDetailsOpen, setIsTradeOptionalDetailsOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready. Add a trade or refresh prices.");
   const [globalError, setGlobalError] = useState("");
@@ -864,6 +880,28 @@ export default function App() {
   const handleFormChange = (field: keyof TradeFormValues) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((current) => ({ ...current, [field]: event.target.value }));
     setFormErrors((current) => ({ ...current, [field]: undefined }));
+  };
+
+  const handleRiskFormChange = (field: keyof RiskManagementFormValues) => (
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    setRiskForm((current) => ({ ...current, [field]: event.target.value }));
+    setRiskErrors((current) => ({ ...current, [field]: undefined }));
+    setRiskResult(null);
+  };
+
+  const handleRiskCalculate = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const calculation = calculateRiskManagementPlan(riskForm);
+    setRiskErrors(calculation.errors);
+    setRiskResult(calculation.result ?? null);
+    if (calculation.result) setStatusMessage("Risk management plan calculated.");
+  };
+
+  const handleRiskReset = () => {
+    setRiskForm(emptyRiskManagementForm);
+    setRiskErrors({});
+    setRiskResult(null);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1787,6 +1825,154 @@ export default function App() {
                 <button type="submit" className="primary-button">{form.id ? "Save Changes" : "Add Trade"}</button>
                 {form.id && <button type="button" className="secondary-button" onClick={handleCancelEdit}>Cancel</button>}
               </div>
+            </div>
+          )}
+        </form>
+
+        <form className="risk-calculator panel" onSubmit={handleRiskCalculate}>
+          <div className="section-heading disclosure-heading">
+            <div>
+              <h2>Risk Management Calculator</h2>
+              <p className="meta-text">Plan position size from your intended dollar risk.</p>
+            </div>
+            <button
+              type="button"
+              className="disclosure-button"
+              onClick={() => setIsRiskCalculatorOpen((current) => !current)}
+              aria-expanded={isRiskCalculatorOpen}
+              aria-controls="risk-calculator-fields"
+            >
+              {isRiskCalculatorOpen ? "Hide" : "Expand"}
+            </button>
+          </div>
+
+          {isRiskCalculatorOpen && (
+            <div id="risk-calculator-fields" className="risk-calculator-fields">
+              <div className="direction-toggle" role="group" aria-label="Trade direction">
+                <button
+                  type="button"
+                  className={riskForm.direction === "long" ? "active" : ""}
+                  onClick={() => {
+                    setRiskForm((current) => ({ ...current, direction: "long" }));
+                    setRiskErrors({});
+                    setRiskResult(null);
+                  }}
+                >
+                  Long
+                </button>
+                <button
+                  type="button"
+                  className={riskForm.direction === "short" ? "active" : ""}
+                  onClick={() => {
+                    setRiskForm((current) => ({ ...current, direction: "short" }));
+                    setRiskErrors({});
+                    setRiskResult(null);
+                  }}
+                >
+                  Short
+                </button>
+              </div>
+
+              <div className="form-grid risk-form-grid">
+                <label>
+                  <span>Total portfolio value ($)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={riskForm.portfolioValue}
+                    onChange={handleRiskFormChange("portfolioValue")}
+                    placeholder="25000"
+                  />
+                  {riskErrors.portfolioValue && <small className="field-error">{riskErrors.portfolioValue}</small>}
+                </label>
+                <label>
+                  <span>Desired risk amount ($)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={riskForm.desiredRiskAmount}
+                    onChange={handleRiskFormChange("desiredRiskAmount")}
+                    placeholder="250"
+                  />
+                  {riskErrors.desiredRiskAmount && <small className="field-error">{riskErrors.desiredRiskAmount}</small>}
+                </label>
+                <label>
+                  <span>Entry price</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={riskForm.entryPrice}
+                    onChange={handleRiskFormChange("entryPrice")}
+                    placeholder="50.00"
+                  />
+                  {riskErrors.entryPrice && <small className="field-error">{riskErrors.entryPrice}</small>}
+                </label>
+                <label>
+                  <span>Target price</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={riskForm.targetPrice}
+                    onChange={handleRiskFormChange("targetPrice")}
+                    placeholder={riskForm.direction === "long" ? "56.00" : "44.00"}
+                  />
+                  {riskErrors.targetPrice && <small className="field-error">{riskErrors.targetPrice}</small>}
+                </label>
+                <label>
+                  <span>Stop loss price</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={riskForm.stopLossPrice}
+                    onChange={handleRiskFormChange("stopLossPrice")}
+                    placeholder={riskForm.direction === "long" ? "47.50" : "52.50"}
+                  />
+                  {riskErrors.stopLossPrice && <small className="field-error">{riskErrors.stopLossPrice}</small>}
+                </label>
+              </div>
+
+              <div className="form-actions">
+                <button type="submit" className="primary-button">Calculate Position</button>
+                <button type="button" className="secondary-button" onClick={handleRiskReset}>Reset</button>
+              </div>
+
+              {riskResult && (
+                <div className="risk-result-panel" aria-live="polite">
+                  <div className="risk-result-hero">
+                    <span>Suggested position size</span>
+                    <strong>{numberFormatter.format(riskResult.quantity)} shares</strong>
+                    <small>{formatCurrency(riskResult.requiredCapital)} required capital</small>
+                  </div>
+                  <div className="metric-grid risk-result-grid">
+                    <span>
+                      Actual risk<strong>{formatCurrency(riskResult.actualRiskAmount)}</strong>
+                    </span>
+                    <span>
+                      Portfolio risk<strong>{formatPercent(riskResult.portfolioRiskPercent)}</strong>
+                    </span>
+                    <span>
+                      Potential profit<strong>{formatCurrency(riskResult.potentialRewardAmount)}</strong>
+                    </span>
+                    <span>
+                      Reward / risk<strong>{riskResult.rewardRiskRatio.toFixed(2)}</strong>
+                    </span>
+                    <span>
+                      Risk per share<strong>{formatCurrency(riskResult.riskPerShare)}</strong>
+                    </span>
+                    <span>
+                      Portfolio allocation<strong>{formatPercent(riskResult.portfolioAllocationPercent)}</strong>
+                    </span>
+                  </div>
+                  <p className="meta-text">
+                    Position size is rounded down to whole shares so actual risk does not exceed the desired risk amount.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </form>

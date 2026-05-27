@@ -57,6 +57,34 @@ export interface TakeProfitRecommendation {
   rewardRiskRatio?: number | null;
 }
 
+export type RiskManagementDirection = "long" | "short";
+
+export interface RiskManagementFormValues {
+  direction: RiskManagementDirection;
+  portfolioValue: string;
+  desiredRiskAmount: string;
+  entryPrice: string;
+  targetPrice: string;
+  stopLossPrice: string;
+}
+
+export interface RiskManagementResult {
+  quantity: number;
+  riskPerShare: number;
+  rewardPerShare: number;
+  actualRiskAmount: number;
+  potentialRewardAmount: number;
+  rewardRiskRatio: number;
+  requiredCapital: number;
+  portfolioRiskPercent: number;
+  portfolioAllocationPercent: number;
+}
+
+export interface RiskManagementValidationResult {
+  result?: RiskManagementResult;
+  errors: Partial<Record<keyof RiskManagementFormValues, string>>;
+}
+
 export const toNumber = (value: string) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -79,6 +107,80 @@ export const calculateRewardAmount = (entryPrice: number, takeProfit: number | n
 export const calculateRiskRewardRatio = (riskAmount: number | null, rewardAmount: number | null) => {
   if (riskAmount == null || rewardAmount == null || riskAmount <= 0) return null;
   return rewardAmount / riskAmount;
+};
+
+export const calculateRiskManagementPlan = (
+  form: RiskManagementFormValues,
+): RiskManagementValidationResult => {
+  const portfolioValue = toNumber(form.portfolioValue);
+  const desiredRiskAmount = toNumber(form.desiredRiskAmount);
+  const entryPrice = toNumber(form.entryPrice);
+  const targetPrice = toNumber(form.targetPrice);
+  const stopLossPrice = toNumber(form.stopLossPrice);
+  const errors: RiskManagementValidationResult["errors"] = {};
+
+  if (portfolioValue == null || portfolioValue <= 0) errors.portfolioValue = "Portfolio value must be greater than 0.";
+  if (desiredRiskAmount == null || desiredRiskAmount <= 0) {
+    errors.desiredRiskAmount = "Desired risk amount must be greater than 0.";
+  }
+  if (entryPrice == null || entryPrice <= 0) errors.entryPrice = "Entry price must be greater than 0.";
+  if (targetPrice == null || targetPrice <= 0) errors.targetPrice = "Target price must be greater than 0.";
+  if (stopLossPrice == null || stopLossPrice <= 0) errors.stopLossPrice = "Stop loss price must be greater than 0.";
+
+  if (entryPrice != null && targetPrice != null && form.direction === "long" && targetPrice <= entryPrice) {
+    errors.targetPrice = "For a long trade, target price must be above entry.";
+  }
+  if (entryPrice != null && stopLossPrice != null && form.direction === "long" && stopLossPrice >= entryPrice) {
+    errors.stopLossPrice = "For a long trade, stop loss must be below entry.";
+  }
+  if (entryPrice != null && targetPrice != null && form.direction === "short" && targetPrice >= entryPrice) {
+    errors.targetPrice = "For a short trade, target price must be below entry.";
+  }
+  if (entryPrice != null && stopLossPrice != null && form.direction === "short" && stopLossPrice <= entryPrice) {
+    errors.stopLossPrice = "For a short trade, stop loss must be above entry.";
+  }
+
+  if (
+    Object.keys(errors).length > 0 ||
+    portfolioValue == null ||
+    desiredRiskAmount == null ||
+    entryPrice == null ||
+    targetPrice == null ||
+    stopLossPrice == null
+  ) {
+    return { errors };
+  }
+
+  const riskPerShare = Math.abs(entryPrice - stopLossPrice);
+  const rewardPerShare = Math.abs(targetPrice - entryPrice);
+  const quantity = Math.floor(desiredRiskAmount / riskPerShare);
+
+  if (quantity < 1) {
+    return {
+      errors: {
+        desiredRiskAmount: "Desired risk is too small for one share at this stop distance.",
+      },
+    };
+  }
+
+  const actualRiskAmount = quantity * riskPerShare;
+  const potentialRewardAmount = quantity * rewardPerShare;
+  const requiredCapital = quantity * entryPrice;
+
+  return {
+    errors,
+    result: {
+      quantity,
+      riskPerShare,
+      rewardPerShare,
+      actualRiskAmount,
+      potentialRewardAmount,
+      rewardRiskRatio: rewardPerShare / riskPerShare,
+      requiredCapital,
+      portfolioRiskPercent: (actualRiskAmount / portfolioValue) * 100,
+      portfolioAllocationPercent: (requiredCapital / portfolioValue) * 100,
+    },
+  };
 };
 
 export const getTradeStatus = (

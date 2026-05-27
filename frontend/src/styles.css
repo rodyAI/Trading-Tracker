@@ -382,6 +382,65 @@ label span,
   margin-top: 16px;
 }
 
+.risk-calculator-fields {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.direction-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 5px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.direction-toggle button {
+  min-height: 42px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-weight: 900;
+}
+
+.direction-toggle button.active {
+  color: #041010;
+  background: var(--positive);
+}
+
+.risk-result-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(33, 182, 168, 0.08);
+  border: 1px solid rgba(33, 182, 168, 0.34);
+  border-radius: 8px;
+}
+
+.risk-result-hero {
+  display: grid;
+  gap: 5px;
+}
+
+.risk-result-hero span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.risk-result-hero strong {
+  color: var(--accent-strong);
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.risk-result-hero small {
+  color: var(--muted);
+}
+
 .form-optional-details {
   margin-top: 14px;
   padding: 12px;
@@ -1194,6 +1253,10 @@ td small.recommendation-error {
   .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .risk-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -1303,6 +1366,27 @@ td small.recommendation-error {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .risk-calculator-fields {
+    gap: 12px;
+  }
+
+  .risk-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .direction-toggle {
+    gap: 6px;
+  }
+
+  .risk-result-hero strong {
+    font-size: 1.35rem;
+  }
+
+  .risk-result-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .section-picker-panel {
