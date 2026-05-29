@@ -93,12 +93,15 @@ service cloud.firestore {
     function validPortfolioSettings() {
       return request.resource.data.keys().hasOnly([
         "excludedCategories",
+        "hiddenClosedTradeCategories",
         "enabledCategories",
         "availableCategories",
         "categoryLabels",
         "updatedAt"
       ]) &&
         request.resource.data.excludedCategories is list &&
+        (!("hiddenClosedTradeCategories" in request.resource.data) ||
+          request.resource.data.hiddenClosedTradeCategories is list) &&
         request.resource.data.enabledCategories is list &&
         request.resource.data.availableCategories is list &&
         request.resource.data.categoryLabels is map &&

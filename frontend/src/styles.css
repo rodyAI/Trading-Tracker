@@ -788,9 +788,10 @@ textarea {
 
 .strategy-inclusion-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
@@ -809,6 +810,7 @@ textarea {
   align-items: center;
   min-height: 28px;
   margin-top: 0;
+  margin-right: auto;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;

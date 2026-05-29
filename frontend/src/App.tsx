@@ -303,6 +303,7 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState<TradeCategory>("Swing");
   const [importCategory, setImportCategory] = useState<TradeCategory>("Swing");
   const [excludedPortfolioCategories, setExcludedPortfolioCategories] = useState<TradeCategory[]>([]);
+  const [hiddenClosedTradeCategories, setHiddenClosedTradeCategories] = useState<TradeCategory[]>([]);
   const [enabledTradeCategories, setEnabledTradeCategories] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
   const [availableTradeCategories, setAvailableTradeCategories] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
   const [sectionSelectionDraft, setSectionSelectionDraft] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
@@ -350,6 +351,7 @@ export default function App() {
       ),
     );
     setExcludedPortfolioCategories(serverSettings.excludedCategories);
+    setHiddenClosedTradeCategories(serverSettings.hiddenClosedTradeCategories);
     setEnabledTradeCategories(serverSettings.enabledCategories);
     setAvailableTradeCategories(serverSettings.availableCategories);
     setSectionSelectionDraft(serverSettings.enabledCategories);
@@ -380,6 +382,7 @@ export default function App() {
     if (!user) {
       setTrades([]);
       setExcludedPortfolioCategories([]);
+      setHiddenClosedTradeCategories([]);
       setEnabledTradeCategories([...TRADE_CATEGORIES]);
       setAvailableTradeCategories([...TRADE_CATEGORIES]);
       setSectionSelectionDraft([...TRADE_CATEGORIES]);
@@ -748,11 +751,13 @@ export default function App() {
     try {
       const savedSettings = await savePortfolioSettings(user, {
         excludedCategories: nextCategories,
+        hiddenClosedTradeCategories,
         enabledCategories: enabledTradeCategories,
         availableCategories: availableTradeCategories,
         categoryLabels,
       });
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
+      setHiddenClosedTradeCategories(savedSettings.hiddenClosedTradeCategories);
       setEnabledTradeCategories(savedSettings.enabledCategories);
       setAvailableTradeCategories(savedSettings.availableCategories);
       setSectionSelectionDraft(savedSettings.enabledCategories);
@@ -764,6 +769,43 @@ export default function App() {
       setExcludedPortfolioCategories(excludedPortfolioCategories);
       cacheExcludedCategories(user, excludedPortfolioCategories);
       setGlobalError(error instanceof Error ? error.message : `Failed to update ${category} total P/L setting.`);
+    }
+  };
+
+  const handleToggleClosedTradesVisibility = async (category: TradeCategory) => {
+    if (!user) {
+      setStatusMessage("Sign in before changing closed trade visibility.");
+      return;
+    }
+
+    const nextCategories = hiddenClosedTradeCategories.includes(category)
+      ? hiddenClosedTradeCategories.filter((item) => item !== category)
+      : [...hiddenClosedTradeCategories, category];
+
+    setHiddenClosedTradeCategories(nextCategories);
+    try {
+      const savedSettings = await savePortfolioSettings(user, {
+        excludedCategories: excludedPortfolioCategories,
+        hiddenClosedTradeCategories: nextCategories,
+        enabledCategories: enabledTradeCategories,
+        availableCategories: availableTradeCategories,
+        categoryLabels,
+      });
+      setExcludedPortfolioCategories(savedSettings.excludedCategories);
+      setHiddenClosedTradeCategories(savedSettings.hiddenClosedTradeCategories);
+      setEnabledTradeCategories(savedSettings.enabledCategories);
+      setAvailableTradeCategories(savedSettings.availableCategories);
+      setSectionSelectionDraft(savedSettings.enabledCategories);
+      setCategoryLabels(savedSettings.categoryLabels);
+      setCategoryLabelDraft(savedSettings.categoryLabels);
+      setStatusMessage(
+        `${getCategoryLabel(category)} closed trades ${
+          savedSettings.hiddenClosedTradeCategories.includes(category) ? "hidden" : "shown"
+        }.`,
+      );
+    } catch (error) {
+      setHiddenClosedTradeCategories(hiddenClosedTradeCategories);
+      setGlobalError(error instanceof Error ? error.message : `Failed to update ${category} closed trade visibility.`);
     }
   };
 
@@ -816,6 +858,9 @@ export default function App() {
     const nextExcludedCategories = excludedPortfolioCategories.filter((category) =>
       nextEnabledCategories.includes(category),
     );
+    const nextHiddenClosedTradeCategories = hiddenClosedTradeCategories.filter((category) =>
+      nextEnabledCategories.includes(category),
+    );
     const nextCategoryLabels = normalizeCategoryLabels(categoryLabelDraft);
     const nextAvailableCategories = uniqueCategories([
       ...availableTradeCategories,
@@ -828,6 +873,7 @@ export default function App() {
     try {
       const savedSettings = await savePortfolioSettings(user, {
         excludedCategories: nextExcludedCategories,
+        hiddenClosedTradeCategories: nextHiddenClosedTradeCategories,
         enabledCategories: nextEnabledCategories,
         availableCategories: nextAvailableCategories,
         categoryLabels: nextCategoryLabels,
@@ -836,6 +882,7 @@ export default function App() {
       setAvailableTradeCategories(savedSettings.availableCategories);
       setSectionSelectionDraft(savedSettings.enabledCategories);
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
+      setHiddenClosedTradeCategories(savedSettings.hiddenClosedTradeCategories);
       setCategoryLabels(savedSettings.categoryLabels);
       setCategoryLabelDraft(savedSettings.categoryLabels);
       cacheExcludedCategories(user, savedSettings.excludedCategories);
@@ -1021,6 +1068,7 @@ export default function App() {
       clearLocalAppStorage(user);
       setTrades([]);
       setExcludedPortfolioCategories([]);
+      setHiddenClosedTradeCategories([]);
       setEnabledTradeCategories([...TRADE_CATEGORIES]);
       setAvailableTradeCategories([...TRADE_CATEGORIES]);
       setSectionSelectionDraft([...TRADE_CATEGORIES]);
@@ -1083,6 +1131,10 @@ export default function App() {
         tradeDiagnostics.visibleTradeIds.length === 0 ? "none" : tradeDiagnostics.visibleTradeIds.join(", ");
       const excludedCategoryText =
         portfolioSettings.excludedCategories.length === 0 ? "none" : portfolioSettings.excludedCategories.join(", ");
+      const hiddenClosedCategoryText =
+        portfolioSettings.hiddenClosedTradeCategories.length === 0
+          ? "none"
+          : portfolioSettings.hiddenClosedTradeCategories.join(", ");
       const enabledCategoryText =
         portfolioSettings.enabledCategories.length === 0 ? "none" : portfolioSettings.enabledCategories.join(", ");
       const availableCategoryText =
@@ -1099,6 +1151,7 @@ export default function App() {
           `Deleted symbols: ${deletedSymbolText}`,
           `Visible trade ids: ${visibleTradeText}`,
           `Server excluded tabs: ${excludedCategoryText}`,
+          `Server hidden closed tabs: ${hiddenClosedCategoryText}`,
           `Server enabled tabs: ${enabledCategoryText}`,
           `Server available tabs: ${availableCategoryText}`,
         ].join("\n"),
@@ -1170,7 +1223,29 @@ export default function App() {
     [allTradeCategories, enabledTradeCategories],
   );
   const visibleTradeCategorySet = useMemo(() => new Set(visibleTradeCategories), [visibleTradeCategories]);
+  const hiddenClosedTradeCategorySet = useMemo(
+    () => new Set(hiddenClosedTradeCategories),
+    [hiddenClosedTradeCategories],
+  );
+  const visibleTradesByCategory = useMemo(
+    () =>
+      allTradeCategories.reduce(
+        (groups, category) => {
+          const categoryTrades = tradesByCategory[category] ?? [];
+          return {
+            ...groups,
+            [category]: hiddenClosedTradeCategorySet.has(category)
+              ? categoryTrades.filter((trade) => !trade.isClosed)
+              : categoryTrades,
+          };
+        },
+        {} as Record<TradeCategory, TrackedTrade[]>,
+      ),
+    [allTradeCategories, hiddenClosedTradeCategorySet, tradesByCategory],
+  );
   const activeTrades = tradesByCategory[activeCategory] ?? [];
+  const activeClosedTradesHidden = hiddenClosedTradeCategorySet.has(activeCategory);
+  const visibleActiveTrades = visibleTradesByCategory[activeCategory] ?? [];
   const categorySummaries = useMemo(
     () =>
       allTradeCategories.reduce(
@@ -2282,13 +2357,17 @@ export default function App() {
               )}${excludedPortfolioCategorySet.has(category) ? ", excluded from total portfolio P/L" : ""}`}
             >
               <span className="tab-title">{getCategoryLabel(category)}</span>
-              <strong className="tab-count">{numberFormatter.format(tradesByCategory[category].length)}</strong>
+              <strong className="tab-count">{numberFormatter.format(visibleTradesByCategory[category]?.length ?? 0)}</strong>
               <small className="tab-pl">
                 {formatCurrency(categorySummaries[category].totalProfitLoss)} /{" "}
                 {formatPercent(categorySummaries[category].totalProfitLossPercent)}
               </small>
               <small className="tab-inclusion">
-                {excludedPortfolioCategorySet.has(category) ? "Excluded from total" : "Included in total"}
+                {hiddenClosedTradeCategorySet.has(category)
+                  ? "Closed hidden"
+                  : excludedPortfolioCategorySet.has(category)
+                    ? "Excluded from total"
+                    : "Included in total"}
               </small>
             </button>
           ))}
@@ -2299,8 +2378,8 @@ export default function App() {
             <div className="strategy-title-block">
               <h3>{getCategoryLabel(activeCategory)}</h3>
               <span>
-                {numberFormatter.format(activeTrades.length)} trades, {activeSummary.openCount} open,{" "}
-                {activeSummary.closedCount} closed
+                {numberFormatter.format(visibleActiveTrades.length)} shown of {numberFormatter.format(activeTrades.length)} trades,{" "}
+                {activeSummary.openCount} open, {activeSummary.closedCount} closed
               </span>
             </div>
             <div className="strategy-pl-row">
@@ -2319,6 +2398,15 @@ export default function App() {
               <small className="section-inclusion-status">
                 {excludedPortfolioCategorySet.has(activeCategory) ? "Excluded from total P/L" : "Included in total P/L"}
               </small>
+              <button
+                type="button"
+                className={`secondary-button section-total-toggle ${
+                  activeClosedTradesHidden ? "active" : ""
+                }`}
+                onClick={() => void handleToggleClosedTradesVisibility(activeCategory)}
+              >
+                {activeClosedTradesHidden ? "Show closed trades" : "Hide closed trades"}
+              </button>
               <button
                 type="button"
                 className={`secondary-button section-total-toggle ${
@@ -2354,23 +2442,25 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {activeTrades.length === 0 && (
+                {visibleActiveTrades.length === 0 && (
                   <tr>
                     <td colSpan={14} className="empty-state">
-                      No trades in this sheet yet.
+                      {activeTrades.length === 0 ? "No trades in this sheet yet." : "Closed trades are hidden in this sheet."}
                     </td>
                   </tr>
                 )}
-                {activeTrades.map(renderTradeRow)}
+                {visibleActiveTrades.map(renderTradeRow)}
               </tbody>
             </table>
           </div>
 
           <div className="mobile-cards">
-            {activeTrades.length === 0 ? (
-              <p className="empty-state">No trades in this sheet yet.</p>
+            {visibleActiveTrades.length === 0 ? (
+              <p className="empty-state">
+                {activeTrades.length === 0 ? "No trades in this sheet yet." : "Closed trades are hidden in this sheet."}
+              </p>
             ) : (
-              activeTrades.map(renderTradeCard)
+              visibleActiveTrades.map(renderTradeCard)
             )}
           </div>
         </section>

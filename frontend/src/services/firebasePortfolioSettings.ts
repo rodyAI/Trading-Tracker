@@ -18,6 +18,7 @@ export type CategoryLabels = Record<string, string>;
 
 export interface PortfolioSettings {
   excludedCategories: TradeCategory[];
+  hiddenClosedTradeCategories: TradeCategory[];
   enabledCategories: TradeCategory[];
   availableCategories: TradeCategory[];
   categoryLabels: CategoryLabels;
@@ -31,6 +32,7 @@ export const defaultCategoryLabels = TRADE_CATEGORIES.reduce(
 
 const defaultSettings: PortfolioSettings = {
   excludedCategories: [],
+  hiddenClosedTradeCategories: [],
   enabledCategories: [...TRADE_CATEGORIES],
   availableCategories: [...TRADE_CATEGORIES],
   categoryLabels: defaultCategoryLabels,
@@ -58,6 +60,9 @@ const uniqueCategories = (categories: readonly unknown[]) => {
 
 const normalizeSettings = (data: Record<string, unknown> | undefined): PortfolioSettings => {
   const rawCategories = Array.isArray(data?.excludedCategories) ? data.excludedCategories : [];
+  const rawHiddenClosedCategories = Array.isArray(data?.hiddenClosedTradeCategories)
+    ? data.hiddenClosedTradeCategories
+    : [];
   const rawEnabledCategories = Array.isArray(data?.enabledCategories) ? data.enabledCategories : TRADE_CATEGORIES;
   const rawAvailableCategories = Array.isArray(data?.availableCategories) ? data.availableCategories : TRADE_CATEGORIES;
   const rawCategoryLabels =
@@ -83,6 +88,7 @@ const normalizeSettings = (data: Record<string, unknown> | undefined): Portfolio
 
   return {
     excludedCategories: uniqueCategories(rawCategories),
+    hiddenClosedTradeCategories: uniqueCategories(rawHiddenClosedCategories),
     enabledCategories: enabledCategories.length > 0 ? enabledCategories : [...TRADE_CATEGORIES],
     availableCategories,
     categoryLabels,
@@ -116,6 +122,9 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
     : [...TRADE_CATEGORIES];
   const enabledSet = new Set(enabledCategories);
   const excludedCategories = uniqueCategories(settings.excludedCategories).filter((category) => enabledSet.has(category));
+  const hiddenClosedTradeCategories = uniqueCategories(settings.hiddenClosedTradeCategories).filter((category) =>
+    enabledSet.has(category),
+  );
   const excludedSet = new Set(excludedCategories);
   const availableCategories = uniqueCategories([
     ...TRADE_CATEGORIES,
@@ -132,6 +141,7 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
 
   batch.set(ref, {
     excludedCategories,
+    hiddenClosedTradeCategories,
     enabledCategories,
     availableCategories,
     categoryLabels,
@@ -155,6 +165,7 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
   const savedSettings = await loadPortfolioSettingsFromServer(user);
   if (
     !sameCategories(savedSettings.excludedCategories, excludedCategories) ||
+    !sameCategories(savedSettings.hiddenClosedTradeCategories, hiddenClosedTradeCategories) ||
     !sameCategories(savedSettings.enabledCategories, enabledCategories) ||
     !sameCategories(savedSettings.availableCategories, availableCategories) ||
     knownCategories.some((category) => savedSettings.categoryLabels[category] !== categoryLabels[category])
@@ -170,6 +181,9 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
     getDocsFromServer(excludedCategoriesCollection(user)),
   ]);
   const settingsCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).excludedCategories : [];
+  const hiddenClosedTradeCategories = settingsSnapshot.exists()
+    ? normalizeSettings(settingsSnapshot.data()).hiddenClosedTradeCategories
+    : [];
   const enabledCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).enabledCategories : [...TRADE_CATEGORIES];
   const availableCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).availableCategories : [...TRADE_CATEGORIES];
   const categoryLabels = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).categoryLabels : defaultCategoryLabels;
@@ -180,7 +194,7 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
   const excludedCategories = [...new Set([...settingsCategories, ...ledgerCategories])];
 
   return settingsSnapshot.exists() || excludedSnapshot.docs.length > 0
-    ? { excludedCategories, enabledCategories, availableCategories, categoryLabels, exists: true }
+    ? { excludedCategories, hiddenClosedTradeCategories, enabledCategories, availableCategories, categoryLabels, exists: true }
     : defaultSettings;
 };
 
