@@ -192,6 +192,11 @@ const createId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
+const numbersDiffer = (left: number | null | undefined, right: number | null | undefined, tolerance = 0.0001) => {
+  if (left == null || right == null) return left !== right;
+  return Math.abs(left - right) > tolerance;
+};
+
 const tradeMetrics = (trade: TrackedTrade) => {
   const position = calculateTradePosition(trade);
   const unrealizedProfitLoss =
@@ -1166,14 +1171,62 @@ export default function App() {
     if (!validation.values) return;
 
     const existingTrade = form.id ? trades.find((trade) => trade.id === form.id) : null;
-    const preserveLots = Boolean(existingTrade?.entries?.length && existingTrade.symbol === validation.values.symbol);
+    const isEditingSameSymbol = Boolean(existingTrade && existingTrade.symbol === validation.values.symbol);
+    const existingEntries = existingTrade ? getTradeEntryLots(existingTrade) : [];
+    const existingExitLots = existingTrade ? getTradeExitLots(existingTrade) : [];
+    let nextEntries = validation.values.entries;
+    let nextExitLots = [] as TradeExitLot[];
+
+    if (existingTrade && isEditingSameSymbol && existingEntries.length > 0) {
+      const existingPosition = calculateTradePosition(existingTrade);
+      const editableQuantity =
+        existingPosition.openQuantity > 0
+          ? existingPosition.openQuantity
+          : existingPosition.totalEntryQuantity || existingTrade.quantity;
+      const editableEntryPrice =
+        existingPosition.averageOpenEntryPrice ?? existingPosition.averageEntryPrice ?? existingTrade.entryPrice;
+      const aggregateLotFieldsChanged =
+        numbersDiffer(validation.values.quantity, editableQuantity) ||
+        numbersDiffer(validation.values.entryPrice, editableEntryPrice, 0.01);
+
+      if (existingEntries.length === 1 && existingExitLots.length === 0) {
+        const editedEntry = validation.values.entries?.[0];
+        nextEntries = [
+          {
+            ...existingEntries[0],
+            ...editedEntry,
+            id: existingEntries[0].id,
+            quantity: validation.values.quantity,
+            price: validation.values.entryPrice,
+            stopLoss: validation.values.stopLoss,
+            takeProfitLevels: validation.values.takeProfitLevels ?? [],
+            date: validation.values.entryDate,
+          },
+        ];
+      } else {
+        if (aggregateLotFieldsChanged) {
+          setFormErrors({
+            ...validation.errors,
+            quantity: "This position has multiple buy lots or sales. Use Add Entry or Sell to change quantity while keeping lot history accurate.",
+            entryPrice: "Average entry is calculated from the saved buy lots.",
+          });
+          setGlobalError("Use Add Entry or Sell to change a position that has multiple lots or sale history.");
+          setStatusMessage("Trade save stopped to protect lot history.");
+          return;
+        }
+
+        nextEntries = existingEntries;
+        nextExitLots = existingExitLots;
+      }
+    }
+
     const baseTrade: TrackedTrade = {
       ...(existingTrade ?? {}),
       ...validation.values,
       id: form.id ?? createId(),
       category: validation.values.category,
-      entries: preserveLots ? existingTrade?.entries : validation.values.entries,
-      exitLots: preserveLots ? existingTrade?.exitLots ?? [] : [],
+      entries: nextEntries,
+      exitLots: nextExitLots,
       priceError: existingTrade?.symbol === validation.values.symbol ? existingTrade?.priceError : null,
       currentPrice: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPrice : null,
       currentPriceAsOf: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPriceAsOf : null,
@@ -1201,16 +1254,19 @@ export default function App() {
     const position = calculateTradePosition(trade);
     const editableEntryPrice = position.averageOpenEntryPrice ?? position.averageEntryPrice ?? trade.entryPrice;
     const editableQuantity = position.openQuantity > 0 ? position.openQuantity : position.totalEntryQuantity || trade.quantity;
+    const singleOpenLot = position.openEntryLots.length === 1 ? position.openEntryLots[0] : null;
+    const editableTakeProfitLevels =
+      singleOpenLot?.takeProfitLevels?.length ? singleOpenLot.takeProfitLevels : trade.takeProfitLevels ?? [];
     setForm({
       id: trade.id,
       category: trade.category ?? "Swing",
       symbol: trade.symbol,
       quantity: String(roundDisplayQuantity(editableQuantity)),
       entryPrice: String(roundDisplayQuantity(editableEntryPrice)),
-      stopLoss: trade.stopLoss == null ? "" : String(trade.stopLoss),
-      takeProfit: trade.takeProfitLevels?.length ? trade.takeProfitLevels.join(", ") : trade.takeProfit == null ? "" : String(trade.takeProfit),
+      stopLoss: singleOpenLot?.stopLoss == null && trade.stopLoss == null ? "" : String(singleOpenLot?.stopLoss ?? trade.stopLoss),
+      takeProfit: editableTakeProfitLevels.length ? editableTakeProfitLevels.join(", ") : trade.takeProfit == null ? "" : String(trade.takeProfit),
       notes: trade.notes ?? "",
-      entryDate: trade.entryDate ?? "",
+      entryDate: singleOpenLot?.date ?? trade.entryDate ?? "",
       tags: (trade.tags ?? []).join(", "),
       excludeFromPortfolioTotals: trade.excludeFromPortfolioTotals ?? false,
     });
