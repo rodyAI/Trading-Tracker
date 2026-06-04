@@ -8,13 +8,24 @@ export interface TradeEntryLot {
   id: string;
   quantity: number;
   price: number;
+  stopLoss?: number | null;
+  takeProfitLevels?: number[];
   date?: string;
+}
+
+export type SellAllocationMethod = "oldest" | "newest" | "manual";
+
+export interface TradeExitAllocation {
+  entryId: string;
+  quantity: number;
 }
 
 export interface TradeExitLot {
   id: string;
   quantity: number;
   price: number;
+  allocationMethod?: SellAllocationMethod;
+  allocations?: TradeExitAllocation[];
   date?: string;
 }
 
@@ -85,6 +96,7 @@ export interface TradePositionBreakdown {
   openCostBasis: number;
   averageEntryPrice: number | null;
   averageOpenEntryPrice: number | null;
+  openEntryLots: Array<TradeEntryLot & { remainingQuantity: number }>;
 }
 
 export type RiskManagementDirection = "long" | "short";
@@ -150,7 +162,21 @@ const normalizeLotPrice = (value: unknown) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
-export const getTradeEntryLots = (trade: Pick<TrackedTrade, "entries" | "quantity" | "entryPrice" | "entryDate">) => {
+const normalizeTakeProfitLevelValues = (levels: unknown) =>
+  Array.isArray(levels)
+    ? levels
+        .map((level) => normalizeLotPrice(level))
+        .filter((level): level is number => level != null)
+    : [];
+
+const normalizeStopLossValue = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+export const getTradeEntryLots = (
+  trade: Pick<TrackedTrade, "entries" | "quantity" | "entryPrice" | "entryDate">,
+): TradeEntryLot[] => {
   const normalizedEntries = Array.isArray(trade.entries)
     ? trade.entries
         .map((entry, index): TradeEntryLot | null => {
@@ -161,6 +187,8 @@ export const getTradeEntryLots = (trade: Pick<TrackedTrade, "entries" | "quantit
             id: entry.id || `entry-${index}`,
             quantity,
             price,
+            stopLoss: normalizeStopLossValue(entry.stopLoss),
+            takeProfitLevels: normalizeTakeProfitLevelValues(entry.takeProfitLevels),
             date: entry.date ?? "",
           };
         })
@@ -177,7 +205,7 @@ export const getTradeEntryLots = (trade: Pick<TrackedTrade, "entries" | "quantit
 
 export const getTradeExitLots = (
   trade: Pick<TrackedTrade, "exitLots" | "isClosed" | "exitPrice" | "exitDate" | "quantity">,
-) => {
+): TradeExitLot[] => {
   const normalizedExits = Array.isArray(trade.exitLots)
     ? trade.exitLots
         .map((exit, index): TradeExitLot | null => {
@@ -188,6 +216,17 @@ export const getTradeExitLots = (
             id: exit.id || `exit-${index}`,
             quantity,
             price,
+            allocationMethod: exit.allocationMethod === "newest" || exit.allocationMethod === "manual" ? exit.allocationMethod : "oldest",
+            allocations: Array.isArray(exit.allocations)
+              ? exit.allocations
+                  .map((allocation) => {
+                    const allocationQuantity = normalizeLotQuantity(allocation.quantity);
+                    return allocation.entryId && allocationQuantity != null
+                      ? { entryId: allocation.entryId, quantity: allocationQuantity }
+                      : null;
+                  })
+                  .filter((allocation): allocation is TradeExitAllocation => allocation != null)
+              : [],
             date: exit.date ?? "",
           };
         })
@@ -199,7 +238,7 @@ export const getTradeExitLots = (
   const quantity = normalizeLotQuantity(trade.quantity);
   const price = normalizeLotPrice(trade.exitPrice);
   if (!trade.isClosed || quantity == null || price == null) return [];
-  return [{ id: "exit-legacy", quantity, price, date: trade.exitDate ?? "" }];
+  return [{ id: "exit-legacy", quantity, price, allocationMethod: "oldest", allocations: [], date: trade.exitDate ?? "" }];
 };
 
 export const calculateTradePosition = (trade: TrackedTrade): TradePositionBreakdown => {
@@ -218,12 +257,28 @@ export const calculateTradePosition = (trade: TrackedTrade): TradePositionBreakd
     totalSoldQuantity += exit.quantity;
     totalSoldProceeds += exit.quantity * exit.price;
 
-    for (const entry of remainingEntries) {
-      if (sharesToMatch <= 0) break;
-      if (entry.remainingQuantity <= 0) continue;
-      const matchedQuantity = Math.min(entry.remainingQuantity, sharesToMatch);
+    const matchAgainstEntry = (entry: (typeof remainingEntries)[number], requestedQuantity: number) => {
+      if (requestedQuantity <= 0 || entry.remainingQuantity <= 0) return 0;
+      const matchedQuantity = Math.min(entry.remainingQuantity, requestedQuantity);
       soldCostBasis += matchedQuantity * entry.price;
       entry.remainingQuantity -= matchedQuantity;
+      return matchedQuantity;
+    };
+
+    if (exit.allocationMethod === "manual" && exit.allocations?.length) {
+      for (const allocation of exit.allocations) {
+        if (sharesToMatch <= 0) break;
+        const entry = remainingEntries.find((candidate) => candidate.id === allocation.entryId);
+        if (!entry) continue;
+        const matchedQuantity = matchAgainstEntry(entry, Math.min(allocation.quantity, sharesToMatch));
+        sharesToMatch -= matchedQuantity;
+      }
+    }
+
+    const orderedEntries = exit.allocationMethod === "newest" ? [...remainingEntries].reverse() : remainingEntries;
+    for (const entry of orderedEntries) {
+      if (sharesToMatch <= 0) break;
+      const matchedQuantity = matchAgainstEntry(entry, sharesToMatch);
       sharesToMatch -= matchedQuantity;
     }
   }
@@ -244,6 +299,7 @@ export const calculateTradePosition = (trade: TrackedTrade): TradePositionBreakd
     openCostBasis,
     averageEntryPrice: totalEntryQuantity > 0 ? totalEntryCost / totalEntryQuantity : null,
     averageOpenEntryPrice: openQuantity > 0 ? openCostBasis / openQuantity : null,
+    openEntryLots: remainingEntries.filter((entry) => entry.remainingQuantity > 0),
   };
 };
 
@@ -396,6 +452,8 @@ export const validateTradeForm = (form: TradeFormValues): ValidationResult => {
           id: "entry-initial",
           quantity,
           price: entryPrice,
+          stopLoss,
+          takeProfitLevels: validTakeProfitLevels,
           date: form.entryDate,
         },
       ],

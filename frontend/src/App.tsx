@@ -33,6 +33,7 @@ import {
   TRADE_CATEGORIES,
   RiskManagementFormValues,
   RiskManagementResult,
+  SellAllocationMethod,
   TradeEntryLot,
   TradeExitLot,
   TradeCategory,
@@ -47,6 +48,7 @@ import {
   getTradeExitLots,
   getTradeStatus,
   isNearStopOrTarget,
+  parseTakeProfitLevels,
   recommendTakeProfit,
   validateTradeForm,
 } from "./utils/tradeCalculations";
@@ -59,6 +61,10 @@ interface PositionModalState {
   trade: TrackedTrade;
   quantity: string;
   price: string;
+  stopLoss: string;
+  takeProfit: string;
+  allocationMethod: SellAllocationMethod;
+  selectedEntryId: string;
   error: string;
 }
 
@@ -149,7 +155,20 @@ const formatTakeProfitDisplay = (trade: TrackedTrade) => {
 const formatLotSummary = (lots: Array<TradeEntryLot | TradeExitLot>) =>
   lots.length === 0
     ? "None"
-    : lots.map((lot) => `${numberFormatter.format(lot.quantity)} @ ${formatPrice(lot.price)}`).join(" · ");
+    : lots
+        .map((lot) => {
+          const entryDetails =
+            "stopLoss" in lot
+              ? [
+                  lot.stopLoss != null ? `SL ${formatPrice(lot.stopLoss)}` : "",
+                  lot.takeProfitLevels?.length ? `TP ${lot.takeProfitLevels.map(formatPrice).join("/")}` : "",
+                ]
+                  .filter(Boolean)
+                  .join(", ")
+              : "";
+          return `${numberFormatter.format(lot.quantity)} @ ${formatPrice(lot.price)}${entryDetails ? ` (${entryDetails})` : ""}`;
+        })
+        .join(" · ");
 
 const getAuthErrorMessage = (error: unknown) => {
   const code = typeof error === "object" && error != null && "code" in error ? String(error.code) : "";
@@ -183,8 +202,18 @@ const tradeMetrics = (trade: TrackedTrade) => {
   const profitLoss = position.realizedProfitLoss + unrealizedProfitLoss;
   const profitLossPercent = totalCostBasis > 0 ? (profitLoss / totalCostBasis) * 100 : null;
   const averageOpenEntry = position.averageOpenEntryPrice ?? position.averageEntryPrice ?? trade.entryPrice;
-  const riskAmount = calculateRiskAmount(averageOpenEntry, trade.stopLoss, position.openQuantity);
-  const rewardAmount = calculateRewardAmount(averageOpenEntry, trade.takeProfit, position.openQuantity);
+  const lotRiskAmount = position.openEntryLots.reduce((sum, lot) => {
+    const stopLoss = lot.stopLoss ?? trade.stopLoss;
+    if (stopLoss == null || stopLoss >= lot.price) return sum;
+    return sum + (lot.price - stopLoss) * lot.remainingQuantity;
+  }, 0);
+  const lotRewardAmount = position.openEntryLots.reduce((sum, lot) => {
+    const takeProfit = lot.takeProfitLevels?.[0] ?? trade.takeProfit;
+    if (takeProfit == null || takeProfit <= lot.price) return sum;
+    return sum + (takeProfit - lot.price) * lot.remainingQuantity;
+  }, 0);
+  const riskAmount = lotRiskAmount > 0 ? lotRiskAmount : calculateRiskAmount(averageOpenEntry, trade.stopLoss, position.openQuantity);
+  const rewardAmount = lotRewardAmount > 0 ? lotRewardAmount : calculateRewardAmount(averageOpenEntry, trade.takeProfit, position.openQuantity);
   const riskRewardRatio = calculateRiskRewardRatio(riskAmount, rewardAmount);
   const status = position.openQuantity <= 0 ? "Closed" : getTradeStatus({ ...trade, entryPrice: averageOpenEntry, isClosed: false });
 
@@ -320,6 +349,7 @@ export default function App() {
   const [riskErrors, setRiskErrors] = useState<Partial<Record<keyof RiskManagementFormValues, string>>>({});
   const [riskResult, setRiskResult] = useState<RiskManagementResult | null>(null);
   const [positionModal, setPositionModal] = useState<PositionModalState | null>(null);
+  const [expandedTradeIds, setExpandedTradeIds] = useState<Set<string>>(() => new Set());
   const [provider, setProvider] = useState<MarketDataProviderId>(() => {
     if (typeof window === "undefined") return "yahoo";
     const saved = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
@@ -701,6 +731,14 @@ export default function App() {
       trade,
       quantity: mode === "sell-shares" ? String(roundDisplayQuantity(position.openQuantity)) : "",
       price: priceFormatter.format(defaultPrice).replace(/,/g, ""),
+      stopLoss: mode === "add-entry" && trade.stopLoss != null ? String(trade.stopLoss) : "",
+      takeProfit: mode === "add-entry" && trade.takeProfitLevels?.length
+        ? trade.takeProfitLevels.join(", ")
+        : mode === "add-entry" && trade.takeProfit != null
+          ? String(trade.takeProfit)
+          : "",
+      allocationMethod: "oldest",
+      selectedEntryId: position.openEntryLots[0]?.id ?? "",
       error: "",
     });
   };
@@ -720,6 +758,29 @@ export default function App() {
       setPositionModal((current) => current ? { ...current, error: "Quantity and price must be greater than 0." } : current);
       return;
     }
+    const lotStopLoss = positionModal.mode === "add-entry" && positionModal.stopLoss.trim()
+      ? parseExitPrice(positionModal.stopLoss)
+      : null;
+    const lotTakeProfitLevels = positionModal.mode === "add-entry"
+      ? parseTakeProfitLevels(positionModal.takeProfit).filter((level): level is number => level != null && level > 0)
+      : [];
+    const rawLotTakeProfitLevels = positionModal.mode === "add-entry" ? parseTakeProfitLevels(positionModal.takeProfit) : [];
+    if (positionModal.mode === "add-entry" && positionModal.stopLoss.trim() && lotStopLoss == null) {
+      setPositionModal((current) => current ? { ...current, error: "Stop loss must be greater than 0 when provided." } : current);
+      return;
+    }
+    if (positionModal.mode === "add-entry" && rawLotTakeProfitLevels.some((level) => level == null || level <= 0)) {
+      setPositionModal((current) => current ? { ...current, error: "Take profit levels must be greater than 0." } : current);
+      return;
+    }
+    if (positionModal.mode === "add-entry" && lotStopLoss != null && lotStopLoss >= price) {
+      setPositionModal((current) => current ? { ...current, error: "Stop loss must be below entry for a long position." } : current);
+      return;
+    }
+    if (positionModal.mode === "add-entry" && lotTakeProfitLevels.some((level) => level <= price)) {
+      setPositionModal((current) => current ? { ...current, error: "Take profit levels must be above entry for a long position." } : current);
+      return;
+    }
 
     const trade = positionModal.trade;
     const entries = getTradeEntryLots(trade);
@@ -734,6 +795,8 @@ export default function App() {
           id: createId(),
           quantity,
           price,
+          stopLoss: lotStopLoss,
+          takeProfitLevels: lotTakeProfitLevels,
           date: todayIsoDate(),
         },
       ];
@@ -760,6 +823,24 @@ export default function App() {
         );
         return;
       }
+      if (positionModal.allocationMethod === "manual") {
+        const selectedEntry = currentPosition.openEntryLots.find((entry) => entry.id === positionModal.selectedEntryId);
+        if (!selectedEntry) {
+          setPositionModal((current) => current ? { ...current, error: "Choose a buy lot to sell from." } : current);
+          return;
+        }
+        if (quantity > selectedEntry.remainingQuantity) {
+          setPositionModal((current) =>
+            current
+              ? {
+                  ...current,
+                  error: `Selected lot has ${numberFormatter.format(roundDisplayQuantity(selectedEntry.remainingQuantity))} open shares.`,
+                }
+              : current,
+          );
+          return;
+        }
+      }
 
       const nextExitLots = [
         ...exitLots,
@@ -767,6 +848,10 @@ export default function App() {
           id: createId(),
           quantity,
           price,
+          allocationMethod: positionModal.allocationMethod,
+          allocations: positionModal.allocationMethod === "manual"
+            ? [{ entryId: positionModal.selectedEntryId, quantity }]
+            : [],
           date: todayIsoDate(),
         },
       ];
@@ -1303,6 +1388,18 @@ export default function App() {
     setSortDirection(nextKey === "symbol" ? "asc" : "desc");
   };
 
+  const toggleTradeExpansion = (tradeId: string) => {
+    setExpandedTradeIds((current) => {
+      const next = new Set(current);
+      if (next.has(tradeId)) {
+        next.delete(tradeId);
+      } else {
+        next.add(tradeId);
+      }
+      return next;
+    });
+  };
+
   const sortedTrades = useMemo(() => {
     const compare = (left: TrackedTrade, right: TrackedTrade) => {
       if (sortKey === "symbol") return left.symbol.localeCompare(right.symbol);
@@ -1643,6 +1740,9 @@ export default function App() {
         <button type="button" className="icon-button" onClick={() => handleEdit(trade)} aria-label={`Edit ${trade.symbol}`}>
           Edit
         </button>
+        <button type="button" className="icon-button" onClick={() => toggleTradeExpansion(trade.id)} aria-label={`Toggle lots for ${trade.symbol}`}>
+          {expandedTradeIds.has(trade.id) ? "Hide Lots" : "Lots"}
+        </button>
         {isClosed ? (
           <button type="button" className="icon-button" onClick={() => void handleReopenTrade(trade)} aria-label={`Reopen ${trade.symbol}`}>
             Reopen
@@ -1667,6 +1767,64 @@ export default function App() {
     );
   };
 
+  const renderLotDetails = (trade: TrackedTrade) => {
+    const entries = getTradeEntryLots(trade);
+    const exits = getTradeExitLots(trade);
+    const position = calculateTradePosition(trade);
+
+    return (
+      <div className="lot-details">
+        <div>
+          <h4>Buy Lots</h4>
+          <div className="lot-table">
+            <span>Lot</span>
+            <span>Open Qty</span>
+            <span>Total Qty</span>
+            <span>Entry</span>
+            <span>Stop</span>
+            <span>TP</span>
+            {entries.map((entry, index) => {
+              const openLot = position.openEntryLots.find((candidate) => candidate.id === entry.id);
+              return (
+                <div key={entry.id} className="lot-row">
+                  <span>{index + 1}</span>
+                  <span>{numberFormatter.format(roundDisplayQuantity(openLot?.remainingQuantity ?? 0))}</span>
+                  <span>{numberFormatter.format(roundDisplayQuantity(entry.quantity))}</span>
+                  <span>{formatPrice(entry.price)}</span>
+                  <span>{entry.stopLoss == null ? "Not set" : formatPrice(entry.stopLoss)}</span>
+                  <span>{entry.takeProfitLevels?.length ? entry.takeProfitLevels.map(formatPrice).join(", ") : "Not set"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <h4>Sale Lots</h4>
+          {exits.length === 0 ? (
+            <p className="meta-text">No sale lots recorded yet.</p>
+          ) : (
+            <div className="lot-table sale-lot-table">
+              <span>Sale</span>
+              <span>Qty</span>
+              <span>Price</span>
+              <span>Method</span>
+              <span>Date</span>
+              {exits.map((exit, index) => (
+                <div key={exit.id} className="lot-row">
+                  <span>{index + 1}</span>
+                  <span>{numberFormatter.format(roundDisplayQuantity(exit.quantity))}</span>
+                  <span>{formatPrice(exit.price)}</span>
+                  <span>{exit.allocationMethod ?? "oldest"}</span>
+                  <span>{exit.date || "Not set"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const sortArrow = (key: SortKey) => (sortKey === key ? (sortDirection === "asc" ? " ▲" : " ▼") : "");
 
   const renderTradeRow = (trade: TrackedTrade) => {
@@ -1682,50 +1840,57 @@ export default function App() {
         : "negative";
 
     return (
-      <tr key={trade.id} className={`trade-row ${tone}`}>
-        <td>
-          <strong>{trade.symbol}</strong>
-          {trade.excludeFromPortfolioTotals && <small className="total-exclusion-note">Excluded from portfolio total P/L</small>}
-          {trade.tags?.length ? (
-            <div className="tag-list">
-              {trade.tags.map((tag) => (
-                <span key={tag}>{tag}</span>
-              ))}
-            </div>
-          ) : null}
-        </td>
-        <td>
-          {numberFormatter.format(roundDisplayQuantity(position.openQuantity))}
-          {position.totalSoldQuantity > 0 && <small>Sold {numberFormatter.format(roundDisplayQuantity(position.totalSoldQuantity))}</small>}
-        </td>
-        <td>
-          {formatPrice(position.averageOpenEntryPrice ?? position.averageEntryPrice)}
-          <small>{formatLotSummary(getTradeEntryLots(trade))}</small>
-        </td>
-        <td>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</td>
-        <td>{formatTakeProfitDisplay(trade)}</td>
-        <td>
-          <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
-          <small className={recommendationFailed ? "recommendation-error" : undefined}>
-            {getRecommendationExplanation(trade)}
-          </small>
-          {renderChartPreview(trade)}
-        </td>
-        <td>
-          {position.openQuantity <= 0 ? formatPrice(lastExitPrice) : formatPrice(trade.currentPrice)}
-          {position.totalSoldQuantity > 0 && <small>Sales: {formatLotSummary(exitLots)}</small>}
-          {trade.priceError && <small className="field-error">{trade.priceError}</small>}
-        </td>
-        <td>{formatCurrency(metrics.profitLoss)}</td>
-        <td>{formatPercent(metrics.profitLossPercent)}</td>
-        <td>{formatCurrency(metrics.riskAmount)}</td>
-        <td>{formatCurrency(metrics.rewardAmount)}</td>
-        <td>{metrics.riskRewardRatio == null ? unavailableLabel : metrics.riskRewardRatio.toFixed(2)}</td>
-        <td>
-          <span className={`status-pill ${tone}`}>{metrics.status}</span>
-        </td>
-        <td>{renderTradeActions(trade)}</td>
-      </tr>
+      <>
+        <tr key={trade.id} className={`trade-row ${tone}`}>
+          <td>
+            <strong>{trade.symbol}</strong>
+            {trade.excludeFromPortfolioTotals && <small className="total-exclusion-note">Excluded from portfolio total P/L</small>}
+            {trade.tags?.length ? (
+              <div className="tag-list">
+                {trade.tags.map((tag) => (
+                  <span key={tag}>{tag}</span>
+                ))}
+              </div>
+            ) : null}
+          </td>
+          <td>
+            {numberFormatter.format(roundDisplayQuantity(position.openQuantity))}
+            {position.totalSoldQuantity > 0 && <small>Sold {numberFormatter.format(roundDisplayQuantity(position.totalSoldQuantity))}</small>}
+          </td>
+          <td>
+            {formatPrice(position.averageOpenEntryPrice ?? position.averageEntryPrice)}
+            <small>{formatLotSummary(getTradeEntryLots(trade))}</small>
+          </td>
+          <td>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</td>
+          <td>{formatTakeProfitDisplay(trade)}</td>
+          <td>
+            <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
+            <small className={recommendationFailed ? "recommendation-error" : undefined}>
+              {getRecommendationExplanation(trade)}
+            </small>
+            {renderChartPreview(trade)}
+          </td>
+          <td>
+            {position.openQuantity <= 0 ? formatPrice(lastExitPrice) : formatPrice(trade.currentPrice)}
+            {position.totalSoldQuantity > 0 && <small>Sales: {formatLotSummary(exitLots)}</small>}
+            {trade.priceError && <small className="field-error">{trade.priceError}</small>}
+          </td>
+          <td>{formatCurrency(metrics.profitLoss)}</td>
+          <td>{formatPercent(metrics.profitLossPercent)}</td>
+          <td>{formatCurrency(metrics.riskAmount)}</td>
+          <td>{formatCurrency(metrics.rewardAmount)}</td>
+          <td>{metrics.riskRewardRatio == null ? unavailableLabel : metrics.riskRewardRatio.toFixed(2)}</td>
+          <td>
+            <span className={`status-pill ${tone}`}>{metrics.status}</span>
+          </td>
+          <td>{renderTradeActions(trade)}</td>
+        </tr>
+        {expandedTradeIds.has(trade.id) && (
+          <tr className="lot-detail-row">
+            <td colSpan={14}>{renderLotDetails(trade)}</td>
+          </tr>
+        )}
+      </>
     );
   };
 
@@ -1807,6 +1972,7 @@ export default function App() {
               R/R<strong>{metrics.riskRewardRatio == null ? unavailableLabel : metrics.riskRewardRatio.toFixed(2)}</strong>
             </span>
           </div>
+          {renderLotDetails(trade)}
           <div className={`recommendation-box ${recommendationFailed ? "failed" : ""}`}>
             <span>Sell Target</span>
             <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
@@ -2251,6 +2417,67 @@ export default function App() {
                   onChange={(event) => setPositionModal((current) => current ? { ...current, price: event.target.value, error: "" } : current)}
                 />
               </label>
+              {positionModal.mode === "add-entry" && (
+                <>
+                  <label>
+                    <span>Lot stop loss</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={positionModal.stopLoss}
+                      onChange={(event) => setPositionModal((current) => current ? { ...current, stopLoss: event.target.value, error: "" } : current)}
+                      placeholder="Optional"
+                    />
+                  </label>
+                  <label>
+                    <span>Lot take profit(s)</span>
+                    <input
+                      value={positionModal.takeProfit}
+                      onChange={(event) => setPositionModal((current) => current ? { ...current, takeProfit: event.target.value, error: "" } : current)}
+                      placeholder="Optional, comma-separated"
+                    />
+                  </label>
+                </>
+              )}
+              {positionModal.mode === "sell-shares" && (
+                <>
+                  <label>
+                    <span>Sell allocation</span>
+                    <select
+                      value={positionModal.allocationMethod}
+                      onChange={(event) =>
+                        setPositionModal((current) =>
+                          current ? { ...current, allocationMethod: event.target.value as SellAllocationMethod, error: "" } : current,
+                        )
+                      }
+                    >
+                      <option value="oldest">Oldest lot first</option>
+                      <option value="newest">Newest lot first</option>
+                      <option value="manual">Specific lot</option>
+                    </select>
+                  </label>
+                  {positionModal.allocationMethod === "manual" && (
+                    <label>
+                      <span>Buy lot</span>
+                      <select
+                        value={positionModal.selectedEntryId}
+                        onChange={(event) =>
+                          setPositionModal((current) =>
+                            current ? { ...current, selectedEntryId: event.target.value, error: "" } : current,
+                          )
+                        }
+                      >
+                        {calculateTradePosition(positionModal.trade).openEntryLots.map((entry, index) => (
+                          <option key={entry.id} value={entry.id}>
+                            Lot {index + 1}: {numberFormatter.format(roundDisplayQuantity(entry.remainingQuantity))} @ {formatPrice(entry.price)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </>
+              )}
             </div>
             {positionModal.mode === "sell-shares" && (
               <p className="meta-text">

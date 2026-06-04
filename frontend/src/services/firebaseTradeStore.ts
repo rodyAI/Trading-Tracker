@@ -25,7 +25,14 @@ const normalizeLotNumber = (value: unknown) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
 
-const normalizeLots = (lots: unknown) =>
+const normalizeTakeProfitLevels = (levels: unknown) =>
+  Array.isArray(levels)
+    ? levels
+        .map((level) => normalizeLotNumber(level))
+        .filter((level): level is number => level != null)
+    : [];
+
+const normalizeEntryLots = (lots: unknown) =>
   Array.isArray(lots)
     ? lots
         .map((lot, index) => {
@@ -38,17 +45,55 @@ const normalizeLots = (lots: unknown) =>
             id: typeof data.id === "string" && data.id ? data.id : `lot-${index}`,
             quantity,
             price,
+            stopLoss: normalizeLotNumber(data.stopLoss),
+            takeProfitLevels: normalizeTakeProfitLevels(data.takeProfitLevels),
             date: typeof data.date === "string" ? data.date : "",
           };
         })
-        .filter((lot): lot is { id: string; quantity: number; price: number; date: string } => lot != null)
+        .filter(
+          (lot): lot is { id: string; quantity: number; price: number; stopLoss: number | null; takeProfitLevels: number[]; date: string } =>
+            lot != null,
+        )
     : [];
 
-const normalizeTakeProfitLevels = (levels: unknown) =>
-  Array.isArray(levels)
-    ? levels
-        .map((level) => normalizeLotNumber(level))
-        .filter((level): level is number => level != null)
+const normalizeExitLots = (lots: unknown) =>
+  Array.isArray(lots)
+    ? lots
+        .map((lot, index) => {
+          if (!lot || typeof lot !== "object") return null;
+          const data = lot as Record<string, unknown>;
+          const quantity = normalizeLotNumber(data.quantity);
+          const price = normalizeLotNumber(data.price);
+          if (quantity == null || price == null) return null;
+          const rawAllocations = Array.isArray(data.allocations) ? data.allocations : [];
+          return {
+            id: typeof data.id === "string" && data.id ? data.id : `lot-${index}`,
+            quantity,
+            price,
+            allocationMethod: data.allocationMethod === "newest" || data.allocationMethod === "manual" ? data.allocationMethod : "oldest",
+            allocations: rawAllocations
+              .map((allocation) => {
+                if (!allocation || typeof allocation !== "object") return null;
+                const allocationData = allocation as Record<string, unknown>;
+                const allocationQuantity = normalizeLotNumber(allocationData.quantity);
+                return typeof allocationData.entryId === "string" && allocationQuantity != null
+                  ? { entryId: allocationData.entryId, quantity: allocationQuantity }
+                  : null;
+              })
+              .filter((allocation): allocation is { entryId: string; quantity: number } => allocation != null),
+            date: typeof data.date === "string" ? data.date : "",
+          };
+        })
+        .filter(
+          (lot): lot is {
+            id: string;
+            quantity: number;
+            price: number;
+            allocationMethod: "oldest" | "newest" | "manual";
+            allocations: Array<{ entryId: string; quantity: number }>;
+            date: string;
+          } => lot != null,
+        )
     : [];
 
 const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
@@ -58,8 +103,8 @@ const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
   stopLoss: trade.stopLoss ?? null,
   takeProfit: trade.takeProfit ?? null,
   takeProfitLevels: normalizeTakeProfitLevels(trade.takeProfitLevels),
-  entries: normalizeLots(trade.entries),
-  exitLots: normalizeLots(trade.exitLots),
+  entries: normalizeEntryLots(trade.entries),
+  exitLots: normalizeExitLots(trade.exitLots),
   tags: trade.tags ?? [],
   isClosed: trade.isClosed ?? false,
   exitPrice: trade.exitPrice ?? null,

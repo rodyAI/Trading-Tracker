@@ -653,6 +653,56 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.lot-detail-row td {
+  position: static;
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: none;
+}
+
+.lot-details {
+  display: grid;
+  gap: 14px;
+  padding: 12px;
+}
+
+.lot-details h4 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.lot-table {
+  display: grid;
+  grid-template-columns: 0.6fr repeat(5, minmax(92px, 1fr));
+  gap: 1px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--border);
+}
+
+.sale-lot-table {
+  grid-template-columns: 0.6fr repeat(4, minmax(92px, 1fr));
+}
+
+.lot-table > span,
+.lot-row > span {
+  min-width: 0;
+  padding: 8px;
+  overflow-wrap: anywhere;
+  background: var(--panel-soft);
+  font-size: 0.78rem;
+}
+
+.lot-table > span {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.lot-row {
+  display: contents;
+}
+
 .side-menu {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
