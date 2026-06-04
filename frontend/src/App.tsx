@@ -146,6 +146,11 @@ const formatPrice = (value: number | null | undefined) =>
 const formatPercent = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? unavailableLabel : `${percentFormatter.format(value)}%`;
 
+const roundDisplayQuantity = (value: number) => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 10000) / 10000;
+};
+
 const formatTakeProfitDisplay = (trade: TrackedTrade) => {
   const levels = trade.takeProfitLevels?.filter((level) => Number.isFinite(level)) ?? [];
   if (levels.length > 0) return levels.map(formatPrice).join(", ");
@@ -167,6 +172,23 @@ const formatLotSummary = (lots: Array<TradeEntryLot | TradeExitLot>) =>
                   .join(", ")
               : "";
           return `${numberFormatter.format(lot.quantity)} @ ${formatPrice(lot.price)}${entryDetails ? ` (${entryDetails})` : ""}`;
+        })
+        .join(" · ");
+
+const formatOpenEntrySummary = (lots: Array<TradeEntryLot & { remainingQuantity: number }>) =>
+  lots.length === 0
+    ? "None"
+    : lots
+        .map((lot) => {
+          const entryDetails = [
+            lot.stopLoss != null ? `SL ${formatPrice(lot.stopLoss)}` : "",
+            lot.takeProfitLevels?.length ? `TP ${lot.takeProfitLevels.map(formatPrice).join("/")}` : "",
+          ]
+            .filter(Boolean)
+            .join(", ");
+          return `${numberFormatter.format(roundDisplayQuantity(lot.remainingQuantity))} open @ ${formatPrice(lot.price)}${
+            entryDetails ? ` (${entryDetails})` : ""
+          }`;
         })
         .join(" · ");
 
@@ -746,11 +768,6 @@ export default function App() {
       selectedEntryId: position.openEntryLots[0]?.id ?? "",
       error: "",
     });
-  };
-
-  const roundDisplayQuantity = (value: number) => {
-    if (!Number.isFinite(value)) return 0;
-    return Math.round(value * 10000) / 10000;
   };
 
   const handleSubmitPositionModal = async (event: FormEvent<HTMLFormElement>) => {
@@ -1947,7 +1964,7 @@ export default function App() {
           </td>
           <td>
             {formatPrice(position.averageOpenEntryPrice ?? position.averageEntryPrice)}
-            <small>{formatLotSummary(getTradeEntryLots(trade))}</small>
+            <small>Open: {formatOpenEntrySummary(position.openEntryLots)}</small>
           </td>
           <td>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</td>
           <td>{formatTakeProfitDisplay(trade)}</td>
@@ -2045,7 +2062,7 @@ export default function App() {
               TP<strong>{formatTakeProfitDisplay(trade)}</strong>
             </span>
             <span>
-              Entries<strong>{formatLotSummary(getTradeEntryLots(trade))}</strong>
+              Open Entries<strong>{formatOpenEntrySummary(position.openEntryLots)}</strong>
             </span>
             <span>
               Sales<strong>{formatLotSummary(exitLots)}</strong>
