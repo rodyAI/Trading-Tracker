@@ -1432,7 +1432,9 @@ export default function App() {
           : tradeDiagnostics.rawTrades
               .map(
                 (trade) =>
-                  `${trade.symbol}:${trade.id}${trade.isDeleted ? ":isDeleted" : ""}${
+                  `${trade.symbol}:${trade.id}:qty=${trade.quantity ?? "none"}:entries=${
+                    trade.entryQuantities.length ? trade.entryQuantities.join("/") : "none"
+                  }${trade.isDeleted ? ":isDeleted" : ""}${
                     trade.hasDeletedMarker ? ":deletedMarker" : ""
                   }`,
               )

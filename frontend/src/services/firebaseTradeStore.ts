@@ -96,21 +96,34 @@ const normalizeExitLots = (lots: unknown) =>
         )
     : [];
 
-const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
-  ...trade,
-  category: trade.category ?? "Swing",
-  symbol: normalizeSymbol(trade.symbol),
-  stopLoss: trade.stopLoss ?? null,
-  takeProfit: trade.takeProfit ?? null,
-  takeProfitLevels: normalizeTakeProfitLevels(trade.takeProfitLevels),
-  entries: normalizeEntryLots(trade.entries),
-  exitLots: normalizeExitLots(trade.exitLots),
-  tags: trade.tags ?? [],
-  isClosed: trade.isClosed ?? false,
-  exitPrice: trade.exitPrice ?? null,
-  exitDate: trade.exitDate ?? "",
-  excludeFromPortfolioTotals: trade.excludeFromPortfolioTotals ?? false,
-});
+const normalizeTrade = (trade: TrackedTrade): TrackedTrade => {
+  const entries = normalizeEntryLots(trade.entries);
+  const exitLots = normalizeExitLots(trade.exitLots);
+  const quantity = normalizeLotNumber(trade.quantity);
+  const repairedEntries =
+    entries.length === 1 &&
+    exitLots.length === 0 &&
+    quantity != null &&
+    Math.abs(entries[0].quantity - quantity) > 0.0001
+      ? [{ ...entries[0], quantity }]
+      : entries;
+
+  return {
+    ...trade,
+    category: trade.category ?? "Swing",
+    symbol: normalizeSymbol(trade.symbol),
+    stopLoss: trade.stopLoss ?? null,
+    takeProfit: trade.takeProfit ?? null,
+    takeProfitLevels: normalizeTakeProfitLevels(trade.takeProfitLevels),
+    entries: repairedEntries,
+    exitLots,
+    tags: trade.tags ?? [],
+    isClosed: trade.isClosed ?? false,
+    exitPrice: trade.exitPrice ?? null,
+    exitDate: trade.exitDate ?? "",
+    excludeFromPortfolioTotals: trade.excludeFromPortfolioTotals ?? false,
+  };
+};
 
 const stripDerivedMarketData = (trade: TrackedTrade): TrackedTrade => ({
   ...trade,
@@ -200,6 +213,8 @@ export interface TradePersistenceDiagnostics {
   rawTrades: Array<{
     id: string;
     symbol: string;
+    quantity: number | null;
+    entryQuantities: number[];
     isDeleted: boolean;
     hasDeletedMarker: boolean;
   }>;
@@ -227,9 +242,13 @@ export const loadTradePersistenceDiagnostics = async (user: User): Promise<Trade
   const rawTrades = tradeSnapshot.docs.map((item) => {
     const data = item.data();
     const symbol = typeof data.symbol === "string" ? data.symbol : "(no symbol)";
+    const quantity = normalizeLotNumber(data.quantity);
+    const entryQuantities = normalizeEntryLots(data.entries).map((entry) => entry.quantity);
     return {
       id: item.id,
       symbol,
+      quantity,
+      entryQuantities,
       isDeleted: data.isDeleted === true,
       hasDeletedMarker: deletedTradeIds.has(item.id) || deletedSymbols.has(symbol.toUpperCase()),
     };

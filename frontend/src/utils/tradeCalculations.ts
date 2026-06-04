@@ -175,7 +175,7 @@ const normalizeStopLossValue = (value: unknown) => {
 };
 
 export const getTradeEntryLots = (
-  trade: Pick<TrackedTrade, "entries" | "quantity" | "entryPrice" | "entryDate">,
+  trade: Pick<TrackedTrade, "entries" | "exitLots" | "quantity" | "entryPrice" | "entryDate">,
 ): TradeEntryLot[] => {
   const normalizedEntries = Array.isArray(trade.entries)
     ? trade.entries
@@ -195,9 +195,20 @@ export const getTradeEntryLots = (
         .filter((entry): entry is TradeEntryLot => entry != null)
     : [];
 
-  if (normalizedEntries.length > 0) return normalizedEntries;
-
   const quantity = normalizeLotQuantity(trade.quantity);
+  const hasRecordedSales = Array.isArray(trade.exitLots) && trade.exitLots.length > 0;
+  if (normalizedEntries.length > 0) {
+    if (
+      normalizedEntries.length === 1 &&
+      !hasRecordedSales &&
+      quantity != null &&
+      Math.abs(normalizedEntries[0].quantity - quantity) > 0.0001
+    ) {
+      return [{ ...normalizedEntries[0], quantity }];
+    }
+    return normalizedEntries;
+  }
+
   const price = normalizeLotPrice(trade.entryPrice);
   if (quantity == null || price == null) return [];
   return [{ id: "entry-legacy", quantity, price, date: trade.entryDate ?? "" }];
