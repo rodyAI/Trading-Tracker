@@ -1169,13 +1169,16 @@ export default function App() {
     const validation = validateTradeForm(form);
     setFormErrors(validation.errors);
     if (!validation.values) return;
+    const validatedTrade = validation.values;
 
     const existingTrade = form.id ? trades.find((trade) => trade.id === form.id) : null;
-    const isEditingSameSymbol = Boolean(existingTrade && existingTrade.symbol === validation.values.symbol);
+    const isEditingSameSymbol = Boolean(existingTrade && existingTrade.symbol === validatedTrade.symbol);
     const existingEntries = existingTrade ? getTradeEntryLots(existingTrade) : [];
     const existingExitLots = existingTrade ? getTradeExitLots(existingTrade) : [];
-    let nextEntries = validation.values.entries;
+    let nextEntries = validatedTrade.entries;
     let nextExitLots = [] as TradeExitLot[];
+    let nextQuantity = validatedTrade.quantity;
+    let nextEntryPrice = validatedTrade.entryPrice;
 
     if (existingTrade && isEditingSameSymbol && existingEntries.length > 0) {
       const existingPosition = calculateTradePosition(existingTrade);
@@ -1186,31 +1189,49 @@ export default function App() {
       const editableEntryPrice =
         existingPosition.averageOpenEntryPrice ?? existingPosition.averageEntryPrice ?? existingTrade.entryPrice;
       const aggregateLotFieldsChanged =
-        numbersDiffer(validation.values.quantity, editableQuantity) ||
-        numbersDiffer(validation.values.entryPrice, editableEntryPrice, 0.01);
+        numbersDiffer(validatedTrade.quantity, editableQuantity) ||
+        numbersDiffer(validatedTrade.entryPrice, editableEntryPrice, 0.01);
+      const singleOpenLot = existingPosition.openEntryLots.length === 1 ? existingPosition.openEntryLots[0] : null;
 
       if (existingEntries.length === 1 && existingExitLots.length === 0) {
-        const editedEntry = validation.values.entries?.[0];
+        const editedEntry = validatedTrade.entries?.[0];
         nextEntries = [
           {
             ...existingEntries[0],
             ...editedEntry,
             id: existingEntries[0].id,
-            quantity: validation.values.quantity,
-            price: validation.values.entryPrice,
-            stopLoss: validation.values.stopLoss,
-            takeProfitLevels: validation.values.takeProfitLevels ?? [],
-            date: validation.values.entryDate,
+            quantity: validatedTrade.quantity,
+            price: validatedTrade.entryPrice,
+            stopLoss: validatedTrade.stopLoss,
+            takeProfitLevels: validatedTrade.takeProfitLevels ?? [],
+            date: validatedTrade.entryDate,
           },
         ];
+      } else if (singleOpenLot && !numbersDiffer(validatedTrade.entryPrice, editableEntryPrice, 0.01)) {
+        const editedEntry = validatedTrade.entries?.[0];
+        nextEntries = existingEntries.map((entry) => {
+          if (entry.id !== singleOpenLot.id) return entry;
+          const alreadySoldFromLot = Math.max(0, entry.quantity - singleOpenLot.remainingQuantity);
+          return {
+            ...entry,
+            ...editedEntry,
+            id: entry.id,
+            quantity: alreadySoldFromLot + validatedTrade.quantity,
+            price: entry.price,
+            stopLoss: validatedTrade.stopLoss,
+            takeProfitLevels: validatedTrade.takeProfitLevels ?? [],
+            date: validatedTrade.entryDate,
+          };
+        });
+        nextExitLots = existingExitLots;
       } else {
         if (aggregateLotFieldsChanged) {
           setFormErrors({
             ...validation.errors,
-            quantity: "This position has multiple buy lots or sales. Use Add Entry or Sell to change quantity while keeping lot history accurate.",
+            quantity: "This position has multiple open buy lots. Use Add Entry or Sell to change quantity while keeping lot history accurate.",
             entryPrice: "Average entry is calculated from the saved buy lots.",
           });
-          setGlobalError("Use Add Entry or Sell to change a position that has multiple lots or sale history.");
+          setGlobalError("Use Add Entry or Sell to change a position that has multiple open lots.");
           setStatusMessage("Trade save stopped to protect lot history.");
           return;
         }
@@ -1218,20 +1239,31 @@ export default function App() {
         nextEntries = existingEntries;
         nextExitLots = existingExitLots;
       }
+
+      const nextPosition = calculateTradePosition({
+        ...existingTrade,
+        ...validatedTrade,
+        entries: nextEntries,
+        exitLots: nextExitLots,
+      });
+      nextQuantity = nextPosition.openQuantity > 0 ? nextPosition.openQuantity : nextPosition.totalEntryQuantity || validatedTrade.quantity;
+      nextEntryPrice = nextPosition.averageOpenEntryPrice ?? nextPosition.averageEntryPrice ?? validatedTrade.entryPrice;
     }
 
     const baseTrade: TrackedTrade = {
       ...(existingTrade ?? {}),
-      ...validation.values,
+      ...validatedTrade,
       id: form.id ?? createId(),
-      category: validation.values.category,
+      category: validatedTrade.category,
+      quantity: nextQuantity,
+      entryPrice: nextEntryPrice,
       entries: nextEntries,
       exitLots: nextExitLots,
-      priceError: existingTrade?.symbol === validation.values.symbol ? existingTrade?.priceError : null,
-      currentPrice: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPrice : null,
-      currentPriceAsOf: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPriceAsOf : null,
-      currentPriceProvider: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPriceProvider : null,
-      excludeFromPortfolioTotals: validation.values.excludeFromPortfolioTotals,
+      priceError: existingTrade?.symbol === validatedTrade.symbol ? existingTrade?.priceError : null,
+      currentPrice: existingTrade?.symbol === validatedTrade.symbol ? existingTrade?.currentPrice : null,
+      currentPriceAsOf: existingTrade?.symbol === validatedTrade.symbol ? existingTrade?.currentPriceAsOf : null,
+      currentPriceProvider: existingTrade?.symbol === validatedTrade.symbol ? existingTrade?.currentPriceProvider : null,
+      excludeFromPortfolioTotals: validatedTrade.excludeFromPortfolioTotals,
     };
 
     try {
