@@ -13,14 +13,17 @@ service cloud.firestore {
         "symbol",
         "quantity",
         "entryPrice",
+        "entries",
         "stopLoss",
         "takeProfit",
+        "takeProfitLevels",
         "notes",
         "entryDate",
         "tags",
         "isClosed",
         "exitPrice",
         "exitDate",
+        "exitLots",
         "excludeFromPortfolioTotals",
         "isDeleted",
         "deletedAt",
@@ -77,12 +80,15 @@ service cloud.firestore {
         validOptionalString("category") &&
         validOptionalNumber("stopLoss") &&
         validOptionalNumber("takeProfit") &&
+        validOptionalList("takeProfitLevels") &&
+        validOptionalList("entries") &&
         validOptionalString("notes") &&
         validOptionalString("entryDate") &&
         validOptionalList("tags") &&
         validOptionalBool("isClosed") &&
         validOptionalNumber("exitPrice") &&
         validOptionalString("exitDate") &&
+        validOptionalList("exitLots") &&
         validOptionalBool("excludeFromPortfolioTotals") &&
         validOptionalBool("isDeleted") &&
         validOptionalTimestamp("deletedAt") &&

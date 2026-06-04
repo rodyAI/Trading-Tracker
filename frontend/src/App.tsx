@@ -33,15 +33,18 @@ import {
   TRADE_CATEGORIES,
   RiskManagementFormValues,
   RiskManagementResult,
+  TradeEntryLot,
+  TradeExitLot,
   TradeCategory,
   TradeFormValues,
   TrackedTrade,
-  calculateProfitLossDollars,
-  calculateProfitLossPercent,
+  calculateTradePosition,
   calculateRiskManagementPlan,
   calculateRewardAmount,
   calculateRiskAmount,
   calculateRiskRewardRatio,
+  getTradeEntryLots,
+  getTradeExitLots,
   getTradeStatus,
   isNearStopOrTarget,
   recommendTakeProfit,
@@ -50,6 +53,14 @@ import {
 
 type SortKey = "symbol" | "profitLoss" | "riskReward" | "status";
 type SortDirection = "asc" | "desc";
+type PositionModalMode = "add-entry" | "sell-shares";
+interface PositionModalState {
+  mode: PositionModalMode;
+  trade: TrackedTrade;
+  quantity: string;
+  price: string;
+  error: string;
+}
 
 const PROVIDER_STORAGE_KEY = "swing-trading-tracker-provider";
 const PORTFOLIO_SETTINGS_STORAGE_PREFIX = "swing-trading-tracker-portfolio-settings";
@@ -129,6 +140,17 @@ const formatPrice = (value: number | null | undefined) =>
 const formatPercent = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? unavailableLabel : `${percentFormatter.format(value)}%`;
 
+const formatTakeProfitDisplay = (trade: TrackedTrade) => {
+  const levels = trade.takeProfitLevels?.filter((level) => Number.isFinite(level)) ?? [];
+  if (levels.length > 0) return levels.map(formatPrice).join(", ");
+  return trade.takeProfit == null ? "Not set" : formatPrice(trade.takeProfit);
+};
+
+const formatLotSummary = (lots: Array<TradeEntryLot | TradeExitLot>) =>
+  lots.length === 0
+    ? "None"
+    : lots.map((lot) => `${numberFormatter.format(lot.quantity)} @ ${formatPrice(lot.price)}`).join(" · ");
+
 const getAuthErrorMessage = (error: unknown) => {
   const code = typeof error === "object" && error != null && "code" in error ? String(error.code) : "";
   if (code === "auth/operation-not-allowed") {
@@ -152,41 +174,45 @@ const createId = () => {
 };
 
 const tradeMetrics = (trade: TrackedTrade) => {
-  const resolvedPrice = trade.isClosed ? trade.exitPrice : trade.currentPrice;
-  const profitLoss =
-    resolvedPrice == null
-      ? null
-      : calculateProfitLossDollars(resolvedPrice, trade.entryPrice, trade.quantity);
-  const profitLossPercent =
-    resolvedPrice == null ? null : calculateProfitLossPercent(resolvedPrice, trade.entryPrice);
-  const riskAmount = calculateRiskAmount(trade.entryPrice, trade.stopLoss, trade.quantity);
-  const rewardAmount = calculateRewardAmount(trade.entryPrice, trade.takeProfit, trade.quantity);
+  const position = calculateTradePosition(trade);
+  const unrealizedProfitLoss =
+    trade.currentPrice == null || position.openQuantity <= 0
+      ? 0
+      : trade.currentPrice * position.openQuantity - position.openCostBasis;
+  const totalCostBasis = position.openCostBasis + position.soldCostBasis;
+  const profitLoss = position.realizedProfitLoss + unrealizedProfitLoss;
+  const profitLossPercent = totalCostBasis > 0 ? (profitLoss / totalCostBasis) * 100 : null;
+  const averageOpenEntry = position.averageOpenEntryPrice ?? position.averageEntryPrice ?? trade.entryPrice;
+  const riskAmount = calculateRiskAmount(averageOpenEntry, trade.stopLoss, position.openQuantity);
+  const rewardAmount = calculateRewardAmount(averageOpenEntry, trade.takeProfit, position.openQuantity);
   const riskRewardRatio = calculateRiskRewardRatio(riskAmount, rewardAmount);
-  const status = getTradeStatus(trade);
+  const status = position.openQuantity <= 0 ? "Closed" : getTradeStatus({ ...trade, entryPrice: averageOpenEntry, isClosed: false });
 
   return {
     profitLoss,
     profitLossPercent,
+    realizedProfitLoss: position.realizedProfitLoss,
+    unrealizedProfitLoss,
     riskAmount,
     rewardAmount,
     riskRewardRatio,
     status,
+    position,
   };
 };
 
 const summarizeTrades = (items: TrackedTrade[]) => {
-  const openTrades = items.filter((trade) => !trade.isClosed);
-  const closedTrades = items.filter((trade) => trade.isClosed);
-  const invested = openTrades.reduce((sum, trade) => sum + trade.entryPrice * trade.quantity, 0);
+  const positions = items.map(calculateTradePosition);
+  const openTrades = positions.filter((position) => position.openQuantity > 0);
+  const closedTrades = positions.filter((position) => position.openQuantity <= 0 && position.totalEntryQuantity > 0);
+  const invested = positions.reduce((sum, position) => sum + position.openCostBasis, 0);
   const unrealized = items.reduce((sum, trade) => {
-    if (trade.isClosed || trade.currentPrice == null) return sum;
-    return sum + calculateProfitLossDollars(trade.currentPrice, trade.entryPrice, trade.quantity);
+    const position = calculateTradePosition(trade);
+    if (position.openQuantity <= 0 || trade.currentPrice == null) return sum;
+    return sum + trade.currentPrice * position.openQuantity - position.openCostBasis;
   }, 0);
-  const realizedBasis = closedTrades.reduce((sum, trade) => sum + trade.entryPrice * trade.quantity, 0);
-  const realized = closedTrades.reduce((sum, trade) => {
-    if (trade.exitPrice == null) return sum;
-    return sum + calculateProfitLossDollars(trade.exitPrice, trade.entryPrice, trade.quantity);
-  }, 0);
+  const realizedBasis = positions.reduce((sum, position) => sum + position.soldCostBasis, 0);
+  const realized = positions.reduce((sum, position) => sum + position.realizedProfitLoss, 0);
   const totalBasis = invested + realizedBasis;
   const totalProfitLoss = unrealized + realized;
 
@@ -293,6 +319,7 @@ export default function App() {
   const [riskForm, setRiskForm] = useState<RiskManagementFormValues>(emptyRiskManagementForm);
   const [riskErrors, setRiskErrors] = useState<Partial<Record<keyof RiskManagementFormValues, string>>>({});
   const [riskResult, setRiskResult] = useState<RiskManagementResult | null>(null);
+  const [positionModal, setPositionModal] = useState<PositionModalState | null>(null);
   const [provider, setProvider] = useState<MarketDataProviderId>(() => {
     if (typeof window === "undefined") return "yahoo";
     const saved = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
@@ -433,7 +460,7 @@ export default function App() {
   }, [provider]);
 
   useEffect(() => {
-    if (!isSideMenuOpen || typeof window === "undefined") return undefined;
+    if ((!isSideMenuOpen && !positionModal) || typeof window === "undefined") return undefined;
 
     const scrollY = window.scrollY;
     const originalStyles = {
@@ -455,7 +482,7 @@ export default function App() {
       document.body.style.width = originalStyles.width;
       window.scrollTo(0, scrollY);
     };
-  }, [isSideMenuOpen]);
+  }, [isSideMenuOpen, Boolean(positionModal)]);
 
   const enrichTradeRecommendation = useCallback(
     async (trade: TrackedTrade) => {
@@ -561,7 +588,12 @@ export default function App() {
       return;
     }
 
-    const tabTrades = trades.filter((trade) => isVisibleTrade(trade) && (trade.category ?? "Swing") === activeCategory);
+    const tabTrades = trades.filter(
+      (trade) =>
+        isVisibleTrade(trade) &&
+        (trade.category ?? "Swing") === activeCategory &&
+        calculateTradePosition(trade).openQuantity > 0,
+    );
     const activeCategoryLabel = categoryLabels[activeCategory]?.trim() || activeCategory;
 
     if (tabTrades.length === 0) {
@@ -623,7 +655,7 @@ export default function App() {
   }, [activeCategory, categoryLabels, enrichTradeRecommendation, trades, user]);
 
   const handleRecalculateTrade = async (trade: TrackedTrade) => {
-    if (trade.isClosed || recalculatingTradeIds.has(trade.id)) return;
+    if (calculateTradePosition(trade).openQuantity <= 0 || recalculatingTradeIds.has(trade.id)) return;
 
     setRecalculatingTradeIds((current) => new Set(current).add(trade.id));
     setGlobalError("");
@@ -656,39 +688,119 @@ export default function App() {
     }
   };
 
-  const handleCloseTrade = async (trade: TrackedTrade) => {
+  const openPositionModal = (mode: PositionModalMode, trade: TrackedTrade) => {
     if (!user) {
-      setStatusMessage("Sign in before closing trades.");
+      setStatusMessage("Sign in before changing positions.");
       return;
     }
 
-    const defaultExitPrice = getDefaultExitPrice(trade);
-    const input = window.prompt(`Exit price for ${trade.symbol}`, priceFormatter.format(defaultExitPrice).replace(/,/g, ""));
-    const exitPrice = parseExitPrice(input);
+    const position = calculateTradePosition(trade);
+    const defaultPrice = mode === "sell-shares" ? getDefaultExitPrice(trade) : trade.currentPrice ?? trade.entryPrice;
+    setPositionModal({
+      mode,
+      trade,
+      quantity: mode === "sell-shares" ? String(roundDisplayQuantity(position.openQuantity)) : "",
+      price: priceFormatter.format(defaultPrice).replace(/,/g, ""),
+      error: "",
+    });
+  };
 
-    if (input == null) return;
-    if (exitPrice == null) {
-      setGlobalError("Exit price must be greater than 0.");
+  const roundDisplayQuantity = (value: number) => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.round(value * 10000) / 10000;
+  };
+
+  const handleSubmitPositionModal = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user || !positionModal) return;
+
+    const quantity = parseExitPrice(positionModal.quantity);
+    const price = parseExitPrice(positionModal.price);
+    if (quantity == null || price == null) {
+      setPositionModal((current) => current ? { ...current, error: "Quantity and price must be greater than 0." } : current);
       return;
     }
 
-    const closedTrade: TrackedTrade = {
-      ...trade,
-      isClosed: true,
-      exitPrice,
-      exitDate: todayIsoDate(),
-      currentPrice: null,
-      currentPriceAsOf: null,
-      currentPriceProvider: null,
-      priceError: null,
-    };
+    const trade = positionModal.trade;
+    const entries = getTradeEntryLots(trade);
+    const exitLots = getTradeExitLots(trade);
+    const currentPosition = calculateTradePosition({ ...trade, entries, exitLots });
+    let updatedTrade: TrackedTrade;
+
+    if (positionModal.mode === "add-entry") {
+      const nextEntries = [
+        ...entries,
+        {
+          id: createId(),
+          quantity,
+          price,
+          date: todayIsoDate(),
+        },
+      ];
+      const nextPosition = calculateTradePosition({ ...trade, entries: nextEntries, exitLots });
+      updatedTrade = {
+        ...trade,
+        entries: nextEntries,
+        exitLots,
+        quantity: nextPosition.totalEntryQuantity,
+        entryPrice: nextPosition.averageOpenEntryPrice ?? nextPosition.averageEntryPrice ?? price,
+        isClosed: false,
+        exitPrice: null,
+        exitDate: "",
+      };
+    } else {
+      if (quantity > currentPosition.openQuantity) {
+        setPositionModal((current) =>
+          current
+            ? {
+                ...current,
+                error: `You can sell up to ${numberFormatter.format(roundDisplayQuantity(currentPosition.openQuantity))} open shares.`,
+              }
+            : current,
+        );
+        return;
+      }
+
+      const nextExitLots = [
+        ...exitLots,
+        {
+          id: createId(),
+          quantity,
+          price,
+          date: todayIsoDate(),
+        },
+      ];
+      const nextPosition = calculateTradePosition({ ...trade, entries, exitLots: nextExitLots });
+      const fullyClosed = nextPosition.openQuantity <= 0.000001;
+      updatedTrade = {
+        ...trade,
+        entries,
+        exitLots: nextExitLots,
+        quantity: nextPosition.totalEntryQuantity,
+        entryPrice: nextPosition.averageOpenEntryPrice ?? nextPosition.averageEntryPrice ?? trade.entryPrice,
+        isClosed: fullyClosed,
+        exitPrice: price,
+        exitDate: todayIsoDate(),
+        currentPrice: fullyClosed ? null : trade.currentPrice,
+        currentPriceAsOf: fullyClosed ? null : trade.currentPriceAsOf,
+        currentPriceProvider: fullyClosed ? null : trade.currentPriceProvider,
+        priceError: fullyClosed ? null : trade.priceError,
+      };
+    }
 
     try {
-      await saveUserTrade(user, closedTrade);
-      setTrades((currentTrades) => currentTrades.map((currentTrade) => (currentTrade.id === trade.id ? closedTrade : currentTrade)));
-      setStatusMessage(`${trade.symbol} closed at ${formatPrice(exitPrice)}.`);
+      await saveUserTrade(user, updatedTrade);
+      setTrades((currentTrades) => currentTrades.map((currentTrade) => (currentTrade.id === trade.id ? updatedTrade : currentTrade)));
+      setPositionModal(null);
+      setStatusMessage(
+        positionModal.mode === "add-entry"
+          ? `${trade.symbol} entry lot added.`
+          : `${trade.symbol} sale recorded at ${formatPrice(price)}.`,
+      );
     } catch (error) {
-      setGlobalError(error instanceof Error ? error.message : `Failed to close ${trade.symbol}.`);
+      setPositionModal((current) =>
+        current ? { ...current, error: error instanceof Error ? error.message : "Failed to save position change." } : current,
+      );
     }
   };
 
@@ -698,8 +810,14 @@ export default function App() {
       return;
     }
 
+    const entries = getTradeEntryLots(trade);
+    const reopenedPosition = calculateTradePosition({ ...trade, entries, exitLots: [] });
     const reopenedTrade: TrackedTrade = {
       ...trade,
+      entries,
+      exitLots: [],
+      quantity: reopenedPosition.totalEntryQuantity,
+      entryPrice: reopenedPosition.averageOpenEntryPrice ?? reopenedPosition.averageEntryPrice ?? trade.entryPrice,
       isClosed: false,
       exitPrice: null,
       exitDate: "",
@@ -963,11 +1081,14 @@ export default function App() {
     if (!validation.values) return;
 
     const existingTrade = form.id ? trades.find((trade) => trade.id === form.id) : null;
+    const preserveLots = Boolean(existingTrade?.entries?.length && existingTrade.symbol === validation.values.symbol);
     const baseTrade: TrackedTrade = {
       ...(existingTrade ?? {}),
       ...validation.values,
       id: form.id ?? createId(),
       category: validation.values.category,
+      entries: preserveLots ? existingTrade?.entries : validation.values.entries,
+      exitLots: preserveLots ? existingTrade?.exitLots ?? [] : [],
       priceError: existingTrade?.symbol === validation.values.symbol ? existingTrade?.priceError : null,
       currentPrice: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPrice : null,
       currentPriceAsOf: existingTrade?.symbol === validation.values.symbol ? existingTrade?.currentPriceAsOf : null,
@@ -992,14 +1113,17 @@ export default function App() {
   };
 
   const handleEdit = (trade: TrackedTrade) => {
+    const position = calculateTradePosition(trade);
+    const editableEntryPrice = position.averageOpenEntryPrice ?? position.averageEntryPrice ?? trade.entryPrice;
+    const editableQuantity = position.openQuantity > 0 ? position.openQuantity : position.totalEntryQuantity || trade.quantity;
     setForm({
       id: trade.id,
       category: trade.category ?? "Swing",
       symbol: trade.symbol,
-      quantity: String(trade.quantity),
-      entryPrice: String(trade.entryPrice),
+      quantity: String(roundDisplayQuantity(editableQuantity)),
+      entryPrice: String(roundDisplayQuantity(editableEntryPrice)),
       stopLoss: trade.stopLoss == null ? "" : String(trade.stopLoss),
-      takeProfit: trade.takeProfit == null ? "" : String(trade.takeProfit),
+      takeProfit: trade.takeProfitLevels?.length ? trade.takeProfitLevels.join(", ") : trade.takeProfit == null ? "" : String(trade.takeProfit),
       notes: trade.notes ?? "",
       entryDate: trade.entryDate ?? "",
       tags: (trade.tags ?? []).join(", "),
@@ -1008,7 +1132,7 @@ export default function App() {
     setFormErrors({});
     setActiveCategory(trade.category ?? "Swing");
     setIsTradeFormOpen(true);
-    setIsTradeOptionalDetailsOpen(Boolean(trade.stopLoss || trade.takeProfit || trade.entryDate || trade.tags?.length || trade.notes));
+    setIsTradeOptionalDetailsOpen(Boolean(trade.stopLoss || trade.takeProfit || trade.takeProfitLevels?.length || trade.entryDate || trade.tags?.length || trade.notes));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -1235,7 +1359,7 @@ export default function App() {
           return {
             ...groups,
             [category]: hiddenClosedTradeCategorySet.has(category)
-              ? categoryTrades.filter((trade) => !trade.isClosed)
+              ? categoryTrades.filter((trade) => calculateTradePosition(trade).openQuantity > 0)
               : categoryTrades,
           };
         },
@@ -1318,36 +1442,43 @@ export default function App() {
       "Exit Price",
       "Exit Date",
       "Exclude From Portfolio Total",
+      "Entry Lots",
+      "Sale Lots",
     ];
 
     const rows = trades
       .filter((trade) => isVisibleTrade(trade) && visibleTradeCategorySet.has(trade.category ?? "Swing"))
       .map((trade) => {
-      const metrics = tradeMetrics(trade);
-      return [
-        trade.symbol,
-        trade.category ?? "Swing",
-        trade.quantity,
-        trade.entryPrice,
-        trade.stopLoss ?? "",
-        trade.takeProfit ?? "",
-        trade.recommendedTakeProfit ?? "",
-        trade.currentPrice ?? "",
-        metrics.profitLoss ?? "",
-        metrics.profitLossPercent ?? "",
-        metrics.riskAmount,
-        metrics.rewardAmount ?? "",
-        metrics.riskRewardRatio ?? "",
-        metrics.status,
-        trade.entryDate ?? "",
-        (trade.tags ?? []).join("|"),
-        trade.notes ?? "",
-        trade.isClosed ? "yes" : "no",
-        trade.exitPrice ?? "",
-        trade.exitDate ?? "",
-        trade.excludeFromPortfolioTotals ? "yes" : "no",
-      ];
-    });
+        const metrics = tradeMetrics(trade);
+        const position = metrics.position;
+        const exitLots = getTradeExitLots(trade);
+        const lastExit = exitLots.at(-1);
+        return [
+          trade.symbol,
+          trade.category ?? "Swing",
+          position.openQuantity,
+          position.averageOpenEntryPrice ?? position.averageEntryPrice ?? trade.entryPrice,
+          trade.stopLoss ?? "",
+          trade.takeProfitLevels?.length ? trade.takeProfitLevels.join(", ") : trade.takeProfit ?? "",
+          trade.recommendedTakeProfit ?? "",
+          trade.currentPrice ?? "",
+          metrics.profitLoss ?? "",
+          metrics.profitLossPercent ?? "",
+          metrics.riskAmount,
+          metrics.rewardAmount ?? "",
+          metrics.riskRewardRatio ?? "",
+          metrics.status,
+          trade.entryDate ?? "",
+          (trade.tags ?? []).join("|"),
+          trade.notes ?? "",
+          position.openQuantity <= 0 ? "yes" : "no",
+          lastExit?.price ?? trade.exitPrice ?? "",
+          lastExit?.date ?? trade.exitDate ?? "",
+          trade.excludeFromPortfolioTotals ? "yes" : "no",
+          formatLotSummary(getTradeEntryLots(trade)),
+          formatLotSummary(exitLots),
+        ];
+      });
 
     const csv = [header, ...rows]
       .map((row) =>
@@ -1490,49 +1621,59 @@ export default function App() {
     );
   };
 
-  const renderTradeActions = (trade: TrackedTrade) => (
-    <div className="row-actions">
-      {!trade.isClosed && (
+  const renderTradeActions = (trade: TrackedTrade) => {
+    const isClosed = calculateTradePosition(trade).openQuantity <= 0;
+
+    return (
+      <div className="row-actions">
+        <button type="button" className="icon-button" onClick={() => openPositionModal("add-entry", trade)} aria-label={`Add entry for ${trade.symbol}`}>
+          Add Entry
+        </button>
+        {!isClosed && (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => void handleRecalculateTrade(trade)}
+            disabled={recalculatingTradeIds.has(trade.id)}
+            aria-label={`Update ${trade.symbol} sell target`}
+          >
+            {recalculatingTradeIds.has(trade.id) ? "Updating..." : "Update Target"}
+          </button>
+        )}
+        <button type="button" className="icon-button" onClick={() => handleEdit(trade)} aria-label={`Edit ${trade.symbol}`}>
+          Edit
+        </button>
+        {isClosed ? (
+          <button type="button" className="icon-button" onClick={() => void handleReopenTrade(trade)} aria-label={`Reopen ${trade.symbol}`}>
+            Reopen
+          </button>
+        ) : (
+          <button type="button" className="icon-button" onClick={() => openPositionModal("sell-shares", trade)} aria-label={`Sell shares of ${trade.symbol}`}>
+            Sell
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"
-          onClick={() => void handleRecalculateTrade(trade)}
-          disabled={recalculatingTradeIds.has(trade.id)}
-          aria-label={`Update ${trade.symbol} sell target`}
+          onClick={() => void handleToggleTradePortfolioInclusion(trade)}
+          aria-label={`${trade.excludeFromPortfolioTotals ? "Include" : "Exclude"} ${trade.symbol} in portfolio total P/L`}
         >
-          {recalculatingTradeIds.has(trade.id) ? "Updating..." : "Update Target"}
+          {trade.excludeFromPortfolioTotals ? "Include Total" : "Exclude Total"}
         </button>
-      )}
-      <button type="button" className="icon-button" onClick={() => handleEdit(trade)} aria-label={`Edit ${trade.symbol}`}>
-        Edit
-      </button>
-      {trade.isClosed ? (
-        <button type="button" className="icon-button" onClick={() => void handleReopenTrade(trade)} aria-label={`Reopen ${trade.symbol}`}>
-          Reopen
+        <button type="button" className="icon-button danger-button" onClick={() => void handleDelete(trade)} aria-label={`Delete ${trade.symbol}`}>
+          Delete
         </button>
-      ) : (
-        <button type="button" className="icon-button" onClick={() => void handleCloseTrade(trade)} aria-label={`Close ${trade.symbol}`}>
-          Close
-        </button>
-      )}
-      <button
-        type="button"
-        className="icon-button"
-        onClick={() => void handleToggleTradePortfolioInclusion(trade)}
-        aria-label={`${trade.excludeFromPortfolioTotals ? "Include" : "Exclude"} ${trade.symbol} in portfolio total P/L`}
-      >
-        {trade.excludeFromPortfolioTotals ? "Include Total" : "Exclude Total"}
-      </button>
-      <button type="button" className="icon-button danger-button" onClick={() => void handleDelete(trade)} aria-label={`Delete ${trade.symbol}`}>
-        Delete
-      </button>
-    </div>
-  );
+      </div>
+    );
+  };
 
   const sortArrow = (key: SortKey) => (sortKey === key ? (sortDirection === "asc" ? " ▲" : " ▼") : "");
 
   const renderTradeRow = (trade: TrackedTrade) => {
     const metrics = tradeMetrics(trade);
+    const position = metrics.position;
+    const exitLots = getTradeExitLots(trade);
+    const lastExitPrice = exitLots.at(-1)?.price ?? trade.exitPrice;
     const recommendationFailed = isRecommendationDataError(trade);
     const tone = isNearStopOrTarget(trade)
       ? "warning"
@@ -1553,10 +1694,16 @@ export default function App() {
             </div>
           ) : null}
         </td>
-        <td>{numberFormatter.format(trade.quantity)}</td>
-        <td>{formatPrice(trade.entryPrice)}</td>
+        <td>
+          {numberFormatter.format(roundDisplayQuantity(position.openQuantity))}
+          {position.totalSoldQuantity > 0 && <small>Sold {numberFormatter.format(roundDisplayQuantity(position.totalSoldQuantity))}</small>}
+        </td>
+        <td>
+          {formatPrice(position.averageOpenEntryPrice ?? position.averageEntryPrice)}
+          <small>{formatLotSummary(getTradeEntryLots(trade))}</small>
+        </td>
         <td>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</td>
-        <td>{trade.takeProfit == null ? "Not set" : formatPrice(trade.takeProfit)}</td>
+        <td>{formatTakeProfitDisplay(trade)}</td>
         <td>
           <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
           <small className={recommendationFailed ? "recommendation-error" : undefined}>
@@ -1565,8 +1712,8 @@ export default function App() {
           {renderChartPreview(trade)}
         </td>
         <td>
-          {trade.isClosed ? formatPrice(trade.exitPrice) : formatPrice(trade.currentPrice)}
-          {trade.isClosed && <small>Closed {trade.exitDate || "without date"}</small>}
+          {position.openQuantity <= 0 ? formatPrice(lastExitPrice) : formatPrice(trade.currentPrice)}
+          {position.totalSoldQuantity > 0 && <small>Sales: {formatLotSummary(exitLots)}</small>}
           {trade.priceError && <small className="field-error">{trade.priceError}</small>}
         </td>
         <td>{formatCurrency(metrics.profitLoss)}</td>
@@ -1584,6 +1731,9 @@ export default function App() {
 
   const renderTradeCard = (trade: TrackedTrade) => {
     const metrics = tradeMetrics(trade);
+    const position = metrics.position;
+    const exitLots = getTradeExitLots(trade);
+    const lastExitPrice = exitLots.at(-1)?.price ?? trade.exitPrice;
     const recommendationFailed = isRecommendationDataError(trade);
     const hasDataIssue = Boolean(trade.priceError || recommendationFailed);
     const tone = isNearStopOrTarget(trade)
@@ -1598,7 +1748,8 @@ export default function App() {
           <div>
             <h3>{trade.symbol}</h3>
             <p>
-              {numberFormatter.format(trade.quantity)} shares
+              {numberFormatter.format(roundDisplayQuantity(position.openQuantity))} open shares
+              {position.totalSoldQuantity > 0 ? ` · ${numberFormatter.format(roundDisplayQuantity(position.totalSoldQuantity))} sold` : ""}
               {trade.excludeFromPortfolioTotals ? " · Excluded from total" : ""}
             </p>
           </div>
@@ -1607,7 +1758,7 @@ export default function App() {
 
         <div className="mobile-primary-grid">
           <span>
-            {trade.isClosed ? "Exit" : "Current"}<strong>{formatPrice(trade.isClosed ? trade.exitPrice : trade.currentPrice)}</strong>
+            {position.openQuantity <= 0 ? "Last sale" : "Current"}<strong>{formatPrice(position.openQuantity <= 0 ? lastExitPrice : trade.currentPrice)}</strong>
           </span>
           <span>
             P/L<strong>{formatCurrency(metrics.profitLoss)}</strong>
@@ -1632,13 +1783,19 @@ export default function App() {
           <summary>Details</summary>
           <div className="metric-grid">
             <span>
-              Entry<strong>{formatPrice(trade.entryPrice)}</strong>
+              Avg Entry<strong>{formatPrice(position.averageOpenEntryPrice ?? position.averageEntryPrice)}</strong>
             </span>
             <span>
               SL<strong>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</strong>
             </span>
             <span>
-              TP<strong>{trade.takeProfit == null ? "Not set" : formatPrice(trade.takeProfit)}</strong>
+              TP<strong>{formatTakeProfitDisplay(trade)}</strong>
+            </span>
+            <span>
+              Entries<strong>{formatLotSummary(getTradeEntryLots(trade))}</strong>
+            </span>
+            <span>
+              Sales<strong>{formatLotSummary(exitLots)}</strong>
             </span>
             <span>
               Risk<strong>{formatCurrency(metrics.riskAmount)}</strong>
@@ -1878,8 +2035,8 @@ export default function App() {
                     {formErrors.stopLoss && <small className="field-error">{formErrors.stopLoss}</small>}
                   </label>
                   <label>
-                    <span>Take profit</span>
-                    <input type="number" min="0" step="0.01" value={form.takeProfit} onChange={handleFormChange("takeProfit")} placeholder="Optional" />
+                    <span>Take profit price(s)</span>
+                    <input value={form.takeProfit} onChange={handleFormChange("takeProfit")} placeholder="Optional, comma-separated" />
                     {formErrors.takeProfit && <small className="field-error">{formErrors.takeProfit}</small>}
                   </label>
                   <label>
@@ -2059,6 +2216,59 @@ export default function App() {
         </form>
 
       </section>
+
+      {positionModal && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setPositionModal(null)}>
+          <form className="position-modal panel" onSubmit={handleSubmitPositionModal} onClick={(event) => event.stopPropagation()}>
+            <div className="section-heading disclosure-heading">
+              <div>
+                <p className="eyebrow">{positionModal.trade.symbol}</p>
+                <h2>{positionModal.mode === "add-entry" ? "Add Entry Lot" : "Record Sale"}</h2>
+              </div>
+              <button type="button" className="side-menu-close" onClick={() => setPositionModal(null)} aria-label="Close position dialog">
+                ×
+              </button>
+            </div>
+            <div className="form-grid position-modal-grid">
+              <label>
+                <span>{positionModal.mode === "add-entry" ? "Shares bought" : "Shares sold"}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={positionModal.quantity}
+                  onChange={(event) => setPositionModal((current) => current ? { ...current, quantity: event.target.value, error: "" } : current)}
+                  autoFocus
+                />
+              </label>
+              <label>
+                <span>{positionModal.mode === "add-entry" ? "Entry price" : "Sale price"}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={positionModal.price}
+                  onChange={(event) => setPositionModal((current) => current ? { ...current, price: event.target.value, error: "" } : current)}
+                />
+              </label>
+            </div>
+            {positionModal.mode === "sell-shares" && (
+              <p className="meta-text">
+                Open shares: {numberFormatter.format(roundDisplayQuantity(calculateTradePosition(positionModal.trade).openQuantity))}
+              </p>
+            )}
+            {positionModal.error && <p className="error-text">{positionModal.error}</p>}
+            <div className="form-actions">
+              <button type="submit" className="primary-button">
+                {positionModal.mode === "add-entry" ? "Save Entry" : "Save Sale"}
+              </button>
+              <button type="button" className="secondary-button" onClick={() => setPositionModal(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {isSideMenuOpen && (
         <div className="side-menu-backdrop" role="presentation" onClick={() => setIsSideMenuOpen(false)}>

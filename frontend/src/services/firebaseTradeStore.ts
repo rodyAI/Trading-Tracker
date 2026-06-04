@@ -20,12 +20,46 @@ import type { TrackedTrade } from "../utils/tradeCalculations";
 
 const normalizeSymbol = (symbol: unknown) => (typeof symbol === "string" ? symbol.trim().toUpperCase() : "");
 
+const normalizeLotNumber = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const normalizeLots = (lots: unknown) =>
+  Array.isArray(lots)
+    ? lots
+        .map((lot, index) => {
+          if (!lot || typeof lot !== "object") return null;
+          const data = lot as Record<string, unknown>;
+          const quantity = normalizeLotNumber(data.quantity);
+          const price = normalizeLotNumber(data.price);
+          if (quantity == null || price == null) return null;
+          return {
+            id: typeof data.id === "string" && data.id ? data.id : `lot-${index}`,
+            quantity,
+            price,
+            date: typeof data.date === "string" ? data.date : "",
+          };
+        })
+        .filter((lot): lot is { id: string; quantity: number; price: number; date: string } => lot != null)
+    : [];
+
+const normalizeTakeProfitLevels = (levels: unknown) =>
+  Array.isArray(levels)
+    ? levels
+        .map((level) => normalizeLotNumber(level))
+        .filter((level): level is number => level != null)
+    : [];
+
 const normalizeTrade = (trade: TrackedTrade): TrackedTrade => ({
   ...trade,
   category: trade.category ?? "Swing",
   symbol: normalizeSymbol(trade.symbol),
   stopLoss: trade.stopLoss ?? null,
   takeProfit: trade.takeProfit ?? null,
+  takeProfitLevels: normalizeTakeProfitLevels(trade.takeProfitLevels),
+  entries: normalizeLots(trade.entries),
+  exitLots: normalizeLots(trade.exitLots),
   tags: trade.tags ?? [],
   isClosed: trade.isClosed ?? false,
   exitPrice: trade.exitPrice ?? null,

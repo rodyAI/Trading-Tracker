@@ -4,20 +4,37 @@ export type TradeStatus = "Open" | "Closed" | "Stop loss hit" | "Take profit hit
 export const TRADE_CATEGORIES = ["Swing", "Long trades", "Value investing", "Magic formula"] as const;
 export type TradeCategory = string;
 
+export interface TradeEntryLot {
+  id: string;
+  quantity: number;
+  price: number;
+  date?: string;
+}
+
+export interface TradeExitLot {
+  id: string;
+  quantity: number;
+  price: number;
+  date?: string;
+}
+
 export interface TrackedTrade {
   id: string;
   category?: TradeCategory;
   symbol: string;
   quantity: number;
   entryPrice: number;
+  entries?: TradeEntryLot[];
   stopLoss?: number | null;
   takeProfit?: number | null;
+  takeProfitLevels?: number[];
   notes?: string;
   entryDate?: string;
   tags?: string[];
   isClosed?: boolean;
   exitPrice?: number | null;
   exitDate?: string;
+  exitLots?: TradeExitLot[];
   excludeFromPortfolioTotals?: boolean;
   isDeleted?: boolean;
   deletedAt?: unknown;
@@ -55,6 +72,19 @@ export interface TakeProfitRecommendation {
   atr?: number | null;
   resistance?: number | null;
   rewardRiskRatio?: number | null;
+}
+
+export interface TradePositionBreakdown {
+  totalEntryQuantity: number;
+  totalEntryCost: number;
+  totalSoldQuantity: number;
+  totalSoldProceeds: number;
+  soldCostBasis: number;
+  realizedProfitLoss: number;
+  openQuantity: number;
+  openCostBasis: number;
+  averageEntryPrice: number | null;
+  averageOpenEntryPrice: number | null;
 }
 
 export type RiskManagementDirection = "long" | "short";
@@ -109,6 +139,120 @@ export const calculateRiskRewardRatio = (riskAmount: number | null, rewardAmount
   if (riskAmount == null || rewardAmount == null || riskAmount <= 0) return null;
   return rewardAmount / riskAmount;
 };
+
+const normalizeLotQuantity = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const normalizeLotPrice = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+export const getTradeEntryLots = (trade: Pick<TrackedTrade, "entries" | "quantity" | "entryPrice" | "entryDate">) => {
+  const normalizedEntries = Array.isArray(trade.entries)
+    ? trade.entries
+        .map((entry, index): TradeEntryLot | null => {
+          const quantity = normalizeLotQuantity(entry.quantity);
+          const price = normalizeLotPrice(entry.price);
+          if (quantity == null || price == null) return null;
+          return {
+            id: entry.id || `entry-${index}`,
+            quantity,
+            price,
+            date: entry.date ?? "",
+          };
+        })
+        .filter((entry): entry is TradeEntryLot => entry != null)
+    : [];
+
+  if (normalizedEntries.length > 0) return normalizedEntries;
+
+  const quantity = normalizeLotQuantity(trade.quantity);
+  const price = normalizeLotPrice(trade.entryPrice);
+  if (quantity == null || price == null) return [];
+  return [{ id: "entry-legacy", quantity, price, date: trade.entryDate ?? "" }];
+};
+
+export const getTradeExitLots = (
+  trade: Pick<TrackedTrade, "exitLots" | "isClosed" | "exitPrice" | "exitDate" | "quantity">,
+) => {
+  const normalizedExits = Array.isArray(trade.exitLots)
+    ? trade.exitLots
+        .map((exit, index): TradeExitLot | null => {
+          const quantity = normalizeLotQuantity(exit.quantity);
+          const price = normalizeLotPrice(exit.price);
+          if (quantity == null || price == null) return null;
+          return {
+            id: exit.id || `exit-${index}`,
+            quantity,
+            price,
+            date: exit.date ?? "",
+          };
+        })
+        .filter((exit): exit is TradeExitLot => exit != null)
+    : [];
+
+  if (normalizedExits.length > 0) return normalizedExits;
+
+  const quantity = normalizeLotQuantity(trade.quantity);
+  const price = normalizeLotPrice(trade.exitPrice);
+  if (!trade.isClosed || quantity == null || price == null) return [];
+  return [{ id: "exit-legacy", quantity, price, date: trade.exitDate ?? "" }];
+};
+
+export const calculateTradePosition = (trade: TrackedTrade): TradePositionBreakdown => {
+  const entries = getTradeEntryLots(trade);
+  const exits = getTradeExitLots(trade);
+  const remainingEntries = entries.map((entry) => ({
+    ...entry,
+    remainingQuantity: entry.quantity,
+  }));
+  let soldCostBasis = 0;
+  let totalSoldQuantity = 0;
+  let totalSoldProceeds = 0;
+
+  for (const exit of exits) {
+    let sharesToMatch = exit.quantity;
+    totalSoldQuantity += exit.quantity;
+    totalSoldProceeds += exit.quantity * exit.price;
+
+    for (const entry of remainingEntries) {
+      if (sharesToMatch <= 0) break;
+      if (entry.remainingQuantity <= 0) continue;
+      const matchedQuantity = Math.min(entry.remainingQuantity, sharesToMatch);
+      soldCostBasis += matchedQuantity * entry.price;
+      entry.remainingQuantity -= matchedQuantity;
+      sharesToMatch -= matchedQuantity;
+    }
+  }
+
+  const totalEntryQuantity = entries.reduce((sum, entry) => sum + entry.quantity, 0);
+  const totalEntryCost = entries.reduce((sum, entry) => sum + entry.quantity * entry.price, 0);
+  const openQuantity = remainingEntries.reduce((sum, entry) => sum + entry.remainingQuantity, 0);
+  const openCostBasis = remainingEntries.reduce((sum, entry) => sum + entry.remainingQuantity * entry.price, 0);
+
+  return {
+    totalEntryQuantity,
+    totalEntryCost,
+    totalSoldQuantity,
+    totalSoldProceeds,
+    soldCostBasis,
+    realizedProfitLoss: totalSoldProceeds - soldCostBasis,
+    openQuantity,
+    openCostBasis,
+    averageEntryPrice: totalEntryQuantity > 0 ? totalEntryCost / totalEntryQuantity : null,
+    averageOpenEntryPrice: openQuantity > 0 ? openCostBasis / openQuantity : null,
+  };
+};
+
+export const parseTakeProfitLevels = (value: string) =>
+  value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map(toNumber);
 
 export const calculateRiskManagementPlan = (
   form: RiskManagementFormValues,
@@ -215,7 +359,9 @@ export const validateTradeForm = (form: TradeFormValues): ValidationResult => {
   const quantity = toNumber(form.quantity);
   const entryPrice = toNumber(form.entryPrice);
   const stopLoss = form.stopLoss.trim() ? toNumber(form.stopLoss) : null;
-  const takeProfit = form.takeProfit.trim() ? toNumber(form.takeProfit) : null;
+  const takeProfitLevels = parseTakeProfitLevels(form.takeProfit);
+  const validTakeProfitLevels = takeProfitLevels.filter((level): level is number => level != null && level > 0);
+  const takeProfit = validTakeProfitLevels[0] ?? null;
   const errors: ValidationResult["errors"] = {};
 
   if (!symbol) errors.symbol = "Ticker / symbol is required.";
@@ -227,8 +373,11 @@ export const validateTradeForm = (form: TradeFormValues): ValidationResult => {
   if (entryPrice != null && stopLoss != null && stopLoss >= entryPrice) {
     errors.stopLoss = "Stop loss must be lower than entry price for long trades.";
   }
-  if (takeProfit != null && entryPrice != null && takeProfit <= entryPrice) {
-    errors.takeProfit = "Take profit must be higher than entry price.";
+  if (takeProfitLevels.some((level) => level == null || level <= 0)) {
+    errors.takeProfit = "Take profit prices must be greater than 0.";
+  }
+  if (entryPrice != null && validTakeProfitLevels.some((level) => level <= entryPrice)) {
+    errors.takeProfit = "Take profit prices must be higher than entry price.";
   }
 
   if (Object.keys(errors).length > 0 || quantity == null || entryPrice == null) {
@@ -242,8 +391,17 @@ export const validateTradeForm = (form: TradeFormValues): ValidationResult => {
       category: form.category,
       quantity,
       entryPrice,
+      entries: [
+        {
+          id: "entry-initial",
+          quantity,
+          price: entryPrice,
+          date: form.entryDate,
+        },
+      ],
       stopLoss,
       takeProfit,
+      takeProfitLevels: validTakeProfitLevels,
       notes: form.notes.trim(),
       entryDate: form.entryDate,
       tags: form.tags
