@@ -2907,11 +2907,7 @@ export default function App() {
                 {formatPercent(categorySummaries[category].totalProfitLossPercent)}
               </small>
               <small className="tab-inclusion">
-                {hiddenClosedTradeCategorySet.has(category)
-                  ? "Closed hidden"
-                  : excludedPortfolioCategorySet.has(category)
-                    ? "Excluded from total"
-                    : "Included in total"}
+                {excludedPortfolioCategorySet.has(category) ? "Excluded from total" : "Included in total"}
               </small>
             </button>
           ))}
