@@ -1950,6 +1950,9 @@ export default function App() {
       <>
         <tr key={trade.id} className={`trade-row ${tone}`}>
           <td>
+            <span className={`status-pill ${tone}`}>{metrics.status}</span>
+          </td>
+          <td>
             <strong>{trade.symbol}</strong>
             {trade.excludeFromPortfolioTotals && <small className="total-exclusion-note">Excluded from portfolio total P/L</small>}
             {trade.tags?.length ? (
@@ -1987,9 +1990,6 @@ export default function App() {
           <td>{formatCurrency(metrics.riskAmount)}</td>
           <td>{formatCurrency(metrics.rewardAmount)}</td>
           <td>{metrics.riskRewardRatio == null ? unavailableLabel : metrics.riskRewardRatio.toFixed(2)}</td>
-          <td>
-            <span className={`status-pill ${tone}`}>{metrics.status}</span>
-          </td>
           <td>{renderTradeActions(trade)}</td>
         </tr>
         {expandedTradeIds.has(trade.id) && (
@@ -2017,6 +2017,7 @@ export default function App() {
     return (
       <article key={trade.id} className={`trade-card ${tone}`}>
         <div className="card-heading">
+          <span className={`status-pill ${tone}`}>{metrics.status}</span>
           <div>
             <h3>{trade.symbol}</h3>
             <p>
@@ -2025,7 +2026,6 @@ export default function App() {
               {trade.excludeFromPortfolioTotals ? " · Excluded from total" : ""}
             </p>
           </div>
-          <span className={`status-pill ${tone}`}>{metrics.status}</span>
         </div>
 
         <div className="mobile-primary-grid">
@@ -2969,6 +2969,7 @@ export default function App() {
             <table>
               <thead>
                 <tr>
+                  <th>Status</th>
                   <th>Symbol</th>
                   <th>Qty</th>
                   <th>Entry</th>
@@ -2981,7 +2982,6 @@ export default function App() {
                   <th>Risk $</th>
                   <th>Reward $</th>
                   <th>R/R</th>
-                  <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>

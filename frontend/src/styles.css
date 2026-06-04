@@ -1184,8 +1184,12 @@ td small.recommendation-error {
 
 .card-heading {
   display: flex;
-  justify-content: space-between;
+  align-items: flex-start;
   gap: 12px;
+}
+
+.card-heading > div {
+  min-width: 0;
 }
 
 .card-heading p {
