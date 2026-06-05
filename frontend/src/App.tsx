@@ -135,7 +135,7 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const numberFormatter = new Intl.NumberFormat("en-US");
-const unavailableLabel = "More data needed";
+const unavailableLabel = "N/A";
 
 const formatCurrency = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? unavailableLabel : currencyFormatter.format(value);
@@ -1884,19 +1884,15 @@ export default function App() {
         <div>
           <h4>Buy Lots</h4>
           <div className="lot-table">
-            <span>Lot</span>
-            <span>Open Qty</span>
-            <span>Total Qty</span>
+            <span>Qty</span>
             <span>Entry</span>
-            <span>Stop</span>
+            <span>SL</span>
             <span>TP</span>
-            {entries.map((entry, index) => {
+            {entries.map((entry) => {
               const openLot = position.openEntryLots.find((candidate) => candidate.id === entry.id);
               return (
                 <div key={entry.id} className="lot-row">
-                  <span>{index + 1}</span>
                   <span>{numberFormatter.format(roundDisplayQuantity(openLot?.remainingQuantity ?? 0))}</span>
-                  <span>{numberFormatter.format(roundDisplayQuantity(entry.quantity))}</span>
                   <span>{formatPrice(entry.price)}</span>
                   <span>{entry.stopLoss == null ? "Not set" : formatPrice(entry.stopLoss)}</span>
                   <span>{entry.takeProfitLevels?.length ? entry.takeProfitLevels.map(formatPrice).join(", ") : "Not set"}</span>
@@ -1911,14 +1907,12 @@ export default function App() {
             <p className="meta-text">No sale lots recorded yet.</p>
           ) : (
             <div className="lot-table sale-lot-table">
-              <span>Sale</span>
               <span>Qty</span>
               <span>Price</span>
               <span>Method</span>
               <span>Date</span>
-              {exits.map((exit, index) => (
+              {exits.map((exit) => (
                 <div key={exit.id} className="lot-row">
-                  <span>{index + 1}</span>
                   <span>{numberFormatter.format(roundDisplayQuantity(exit.quantity))}</span>
                   <span>{formatPrice(exit.price)}</span>
                   <span>{exit.allocationMethod ?? "oldest"}</span>
@@ -2033,13 +2027,13 @@ export default function App() {
             {position.openQuantity <= 0 ? "Last sale" : "Current"}<strong>{formatPrice(position.openQuantity <= 0 ? lastExitPrice : trade.currentPrice)}</strong>
           </span>
           <span>
+            SL<strong>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</strong>
+          </span>
+          <span>
             P/L<strong>{formatCurrency(metrics.profitLoss)}</strong>
           </span>
           <span>
             P/L %<strong>{formatPercent(metrics.profitLossPercent)}</strong>
-          </span>
-          <span>
-            Sell Target<strong>{formatPrice(trade.recommendedTakeProfit)}</strong>
           </span>
         </div>
 
@@ -2054,17 +2048,14 @@ export default function App() {
         <details className="mobile-details">
           <summary>Details</summary>
           <div className="metric-grid">
+            <span className="metric-wide">
+              Open Entries<strong>{formatOpenEntrySummary(position.openEntryLots)}</strong>
+            </span>
             <span>
               Avg Entry<strong>{formatPrice(position.averageOpenEntryPrice ?? position.averageEntryPrice)}</strong>
             </span>
             <span>
-              SL<strong>{trade.stopLoss == null ? "Not set" : formatPrice(trade.stopLoss)}</strong>
-            </span>
-            <span>
               TP<strong>{formatTakeProfitDisplay(trade)}</strong>
-            </span>
-            <span>
-              Open Entries<strong>{formatOpenEntrySummary(position.openEntryLots)}</strong>
             </span>
             <span>
               Sales<strong>{formatLotSummary(exitLots)}</strong>

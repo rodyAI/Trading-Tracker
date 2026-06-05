@@ -675,7 +675,7 @@ textarea {
 
 .lot-table {
   display: grid;
-  grid-template-columns: 0.6fr repeat(5, minmax(92px, 1fr));
+  grid-template-columns: minmax(72px, 0.8fr) repeat(3, minmax(92px, 1fr));
   gap: 1px;
   width: 100%;
   max-width: 100%;
@@ -686,7 +686,7 @@ textarea {
 }
 
 .sale-lot-table {
-  grid-template-columns: 0.6fr repeat(4, minmax(92px, 1fr));
+  grid-template-columns: minmax(72px, 0.8fr) repeat(3, minmax(92px, 1fr));
 }
 
 .lot-table > span,
@@ -1677,8 +1677,12 @@ td small.recommendation-error {
   }
 
   .mobile-details .metric-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+  }
+
+  .mobile-details .metric-wide {
+    grid-column: 1 / -1;
   }
 
   .mobile-lot-details .lot-details {
@@ -1688,11 +1692,11 @@ td small.recommendation-error {
   }
 
   .mobile-lot-details .lot-table {
-    grid-template-columns: 44px repeat(5, minmax(84px, 1fr));
+    grid-template-columns: minmax(56px, 0.75fr) repeat(3, minmax(72px, 1fr));
   }
 
   .mobile-lot-details .sale-lot-table {
-    grid-template-columns: 44px repeat(4, minmax(84px, 1fr));
+    grid-template-columns: minmax(56px, 0.75fr) repeat(3, minmax(72px, 1fr));
   }
 
   .mobile-lot-details .lot-table > span,
