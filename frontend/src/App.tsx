@@ -2079,7 +2079,7 @@ export default function App() {
               R/R<strong>{metrics.riskRewardRatio == null ? unavailableLabel : metrics.riskRewardRatio.toFixed(2)}</strong>
             </span>
           </div>
-          {renderLotDetails(trade)}
+          {expandedTradeIds.has(trade.id) && <div className="mobile-lot-details">{renderLotDetails(trade)}</div>}
           <div className={`recommendation-box ${recommendationFailed ? "failed" : ""}`}>
             <span>Sell Target</span>
             <strong>{formatPrice(trade.recommendedTakeProfit)}</strong>

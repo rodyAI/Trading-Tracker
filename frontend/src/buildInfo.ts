@@ -1,9 +1,9 @@
 export const buildInfo = {
   version: "1.0",
   builds: {
-    git: 89,
+    git: 90,
     firestore: 15,
     cloudflare: 3,
-    ext: 87,
+    ext: 88,
   },
 } as const;

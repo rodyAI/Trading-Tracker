@@ -663,6 +663,8 @@ textarea {
   display: grid;
   gap: 14px;
   padding: 12px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .lot-details h4 {
@@ -675,6 +677,8 @@ textarea {
   display: grid;
   grid-template-columns: 0.6fr repeat(5, minmax(92px, 1fr));
   gap: 1px;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1667,13 +1671,34 @@ td small.recommendation-error {
   .mobile-details .recommendation-box,
   .mobile-details .notes-text,
   .mobile-details .row-actions,
+  .mobile-details .mobile-lot-details,
   .mobile-error-details p {
     margin: 0 8px 8px;
   }
 
   .mobile-details .metric-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .mobile-lot-details .lot-details {
+    gap: 12px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .mobile-lot-details .lot-table {
+    grid-template-columns: 44px repeat(5, minmax(84px, 1fr));
+  }
+
+  .mobile-lot-details .sale-lot-table {
+    grid-template-columns: 44px repeat(4, minmax(84px, 1fr));
+  }
+
+  .mobile-lot-details .lot-table > span,
+  .mobile-lot-details .lot-row > span {
+    padding: 7px;
+    font-size: 0.74rem;
   }
 
   .mobile-details .row-actions {
