@@ -188,7 +188,7 @@ const formatLotSummary = (lots: Array<TradeEntryLot | TradeExitLot>) =>
                   .filter(Boolean)
                   .join(", ")
               : "";
-          return `${numberFormatter.format(lot.quantity)} @ ${formatPrice(lot.price)}${entryDetails ? ` (${entryDetails})` : ""}`;
+          return `${shareFormatter.format(roundDisplayQuantity(lot.quantity))} @ ${formatPrice(lot.price)}${entryDetails ? ` (${entryDetails})` : ""}`;
         })
         .join(" · ");
 
@@ -203,7 +203,7 @@ const formatOpenEntrySummary = (lots: Array<TradeEntryLot & { remainingQuantity:
           ]
             .filter(Boolean)
             .join(", ");
-          return `${numberFormatter.format(roundDisplayQuantity(lot.remainingQuantity))} open @ ${formatPrice(lot.price)}${
+          return `${shareFormatter.format(roundDisplayQuantity(lot.remainingQuantity))} open @ ${formatPrice(lot.price)}${
             entryDetails ? ` (${entryDetails})` : ""
           }`;
         })
@@ -859,7 +859,7 @@ export default function App() {
           current
             ? {
                 ...current,
-                error: `You can sell up to ${numberFormatter.format(roundDisplayQuantity(currentPosition.openQuantity))} open shares.`,
+                error: `You can sell up to ${shareFormatter.format(roundDisplayQuantity(currentPosition.openQuantity))} open shares.`,
               }
             : current,
         );
@@ -876,7 +876,7 @@ export default function App() {
             current
               ? {
                   ...current,
-                  error: `Selected lot has ${numberFormatter.format(roundDisplayQuantity(selectedEntry.remainingQuantity))} open shares.`,
+                  error: `Selected lot has ${shareFormatter.format(roundDisplayQuantity(selectedEntry.remainingQuantity))} open shares.`,
                 }
               : current,
           );
@@ -1967,7 +1967,7 @@ export default function App() {
               const openLot = position.openEntryLots.find((candidate) => candidate.id === entry.id);
               return (
                 <div key={entry.id} className="lot-row">
-                  <span>{numberFormatter.format(roundDisplayQuantity(openLot?.remainingQuantity ?? 0))}</span>
+                  <span>{shareFormatter.format(roundDisplayQuantity(openLot?.remainingQuantity ?? 0))}</span>
                   <span>{formatPrice(entry.price)}</span>
                   <span>{entry.stopLoss == null ? "Not set" : formatPrice(entry.stopLoss)}</span>
                   <span>{entry.takeProfitLevels?.length ? entry.takeProfitLevels.map(formatPrice).join(", ") : "Not set"}</span>
@@ -1988,7 +1988,7 @@ export default function App() {
               <span>Date</span>
               {exits.map((exit) => (
                 <div key={exit.id} className="lot-row">
-                  <span>{numberFormatter.format(roundDisplayQuantity(exit.quantity))}</span>
+                  <span>{shareFormatter.format(roundDisplayQuantity(exit.quantity))}</span>
                   <span>{formatPrice(exit.price)}</span>
                   <span>{exit.allocationMethod ?? "oldest"}</span>
                   <span>{exit.date || "Not set"}</span>
@@ -2033,8 +2033,8 @@ export default function App() {
             ) : null}
           </td>
           <td>
-            {numberFormatter.format(roundDisplayQuantity(position.openQuantity))}
-            {position.totalSoldQuantity > 0 && <small>Sold {numberFormatter.format(roundDisplayQuantity(position.totalSoldQuantity))}</small>}
+            {shareFormatter.format(roundDisplayQuantity(position.openQuantity))}
+            {position.totalSoldQuantity > 0 && <small>Sold {shareFormatter.format(roundDisplayQuantity(position.totalSoldQuantity))}</small>}
           </td>
           <td>
             {formatPrice(position.averageOpenEntryPrice ?? position.averageEntryPrice)}
@@ -2090,8 +2090,8 @@ export default function App() {
           <div>
             <h3>{trade.symbol}</h3>
             <p>
-              {numberFormatter.format(roundDisplayQuantity(position.openQuantity))} open shares
-              {position.totalSoldQuantity > 0 ? ` · ${numberFormatter.format(roundDisplayQuantity(position.totalSoldQuantity))} sold` : ""}
+              {shareFormatter.format(roundDisplayQuantity(position.openQuantity))} open shares
+              {position.totalSoldQuantity > 0 ? ` · ${shareFormatter.format(roundDisplayQuantity(position.totalSoldQuantity))} sold` : ""}
               {trade.excludeFromPortfolioTotals ? " · Excluded from total" : ""}
             </p>
           </div>
@@ -2352,7 +2352,7 @@ export default function App() {
                 </label>
                 <label>
                   <span>Quantity</span>
-                  <input type="number" min="0" step="1" value={form.quantity} onChange={handleFormChange("quantity")} placeholder="100" />
+                  <input type="number" min="0" step="0.0001" value={form.quantity} onChange={handleFormChange("quantity")} placeholder="10.5" />
                   {formErrors.quantity && <small className="field-error">{formErrors.quantity}</small>}
                 </label>
                 <label>
@@ -2643,7 +2643,7 @@ export default function App() {
                       >
                         {calculateTradePosition(positionModal.trade).openEntryLots.map((entry, index) => (
                           <option key={entry.id} value={entry.id}>
-                            Lot {index + 1}: {numberFormatter.format(roundDisplayQuantity(entry.remainingQuantity))} @ {formatPrice(entry.price)}
+                            Lot {index + 1}: {shareFormatter.format(roundDisplayQuantity(entry.remainingQuantity))} @ {formatPrice(entry.price)}
                           </option>
                         ))}
                       </select>
@@ -2654,7 +2654,7 @@ export default function App() {
             </div>
             {positionModal.mode === "sell-shares" && (
               <p className="meta-text">
-                Open shares: {numberFormatter.format(roundDisplayQuantity(calculateTradePosition(positionModal.trade).openQuantity))}
+                Open shares: {shareFormatter.format(roundDisplayQuantity(calculateTradePosition(positionModal.trade).openQuantity))}
               </p>
             )}
             {positionModal.error && <p className="error-text">{positionModal.error}</p>}
