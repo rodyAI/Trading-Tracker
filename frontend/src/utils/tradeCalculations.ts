@@ -366,15 +366,7 @@ export const calculateRiskManagementPlan = (
 
   const riskPerShare = Math.abs(entryPrice - stopLossPrice);
   const rewardPerShare = targetPrice == null ? null : Math.abs(targetPrice - entryPrice);
-  const quantity = Math.floor(desiredRiskAmount / riskPerShare);
-
-  if (quantity < 1) {
-    return {
-      errors: {
-        desiredRiskAmount: "Desired risk is too small for one share at this stop distance.",
-      },
-    };
-  }
+  const quantity = desiredRiskAmount / riskPerShare;
 
   const actualRiskAmount = quantity * riskPerShare;
   const potentialRewardAmount = rewardPerShare == null ? null : quantity * rewardPerShare;

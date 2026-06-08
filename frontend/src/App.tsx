@@ -148,6 +148,10 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+const shareFormatter = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 4,
+});
 const unavailableLabel = "N/A";
 
 const formatCurrency = (value: number | null | undefined) =>
@@ -2512,7 +2516,7 @@ export default function App() {
                 <div className="risk-result-panel" aria-live="polite">
                   <div className={`risk-result-hero ${riskResult.exceedsPortfolioValue ? "over-portfolio" : ""}`}>
                     <span>Suggested position size</span>
-                    <strong>{numberFormatter.format(riskResult.quantity)} shares</strong>
+                    <strong>{shareFormatter.format(roundDisplayQuantity(riskResult.quantity))} shares</strong>
                     <small>
                       Investment amount: {formatCurrency(riskResult.investmentAmount)}
                       {riskResult.exceedsPortfolioValue ? " · Higher than total portfolio" : ""}
@@ -2542,7 +2546,7 @@ export default function App() {
                     </span>
                   </div>
                   <p className="meta-text">
-                    Position size is rounded down to whole shares so actual risk does not exceed the desired risk amount.
+                    Position size supports fractional shares. Broker rounding may change actual risk slightly.
                   </p>
                 </div>
               )}
