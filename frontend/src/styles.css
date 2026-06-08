@@ -893,6 +893,34 @@ textarea {
   font-weight: 800;
 }
 
+.strategy-date-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 5px 8px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.strategy-date-control input {
+  min-height: 28px;
+  padding: 3px 6px;
+  color: var(--text);
+  background: #101820;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.strategy-date-control strong {
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+
 .section-total-toggle.active {
   color: #281803;
   background: var(--warning);
@@ -981,6 +1009,13 @@ textarea {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.sheet-tabs button .tab-months {
+  grid-column: 1 / -1;
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 900;
 }
 
 .sheet-tabs button .tab-inclusion {
@@ -1771,6 +1806,12 @@ td small.recommendation-error {
     white-space: nowrap;
   }
 
+  .sheet-tabs button .tab-months {
+    grid-column: auto;
+    font-size: 0.66rem;
+    line-height: 1.15;
+  }
+
   .sheet-tabs button .tab-inclusion {
     overflow: hidden;
     font-size: 0.66rem;
@@ -1807,6 +1848,17 @@ td small.recommendation-error {
   .strategy-inclusion-row {
     display: grid;
     gap: 8px;
+  }
+
+  .strategy-date-control {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .strategy-date-control input {
+    width: 100%;
   }
 
   .section-total-toggle {

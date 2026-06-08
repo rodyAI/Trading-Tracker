@@ -103,6 +103,7 @@ service cloud.firestore {
         "enabledCategories",
         "availableCategories",
         "categoryLabels",
+        "categoryStartDates",
         "updatedAt"
       ]) &&
         request.resource.data.excludedCategories is list &&
@@ -111,6 +112,8 @@ service cloud.firestore {
         request.resource.data.enabledCategories is list &&
         request.resource.data.availableCategories is list &&
         request.resource.data.categoryLabels is map &&
+        (!("categoryStartDates" in request.resource.data) ||
+          request.resource.data.categoryStartDates is map) &&
         validOptionalTimestamp("updatedAt");
     }
 

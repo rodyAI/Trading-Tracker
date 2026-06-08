@@ -15,6 +15,7 @@ import { requireDb, type User } from "../firebase/client";
 import { TRADE_CATEGORIES, type TradeCategory } from "../utils/tradeCalculations";
 
 export type CategoryLabels = Record<string, string>;
+export type CategoryStartDates = Record<string, string>;
 
 export interface PortfolioSettings {
   excludedCategories: TradeCategory[];
@@ -22,6 +23,7 @@ export interface PortfolioSettings {
   enabledCategories: TradeCategory[];
   availableCategories: TradeCategory[];
   categoryLabels: CategoryLabels;
+  categoryStartDates: CategoryStartDates;
   exists?: boolean;
 }
 
@@ -36,6 +38,7 @@ const defaultSettings: PortfolioSettings = {
   enabledCategories: [...TRADE_CATEGORIES],
   availableCategories: [...TRADE_CATEGORIES],
   categoryLabels: defaultCategoryLabels,
+  categoryStartDates: {},
   exists: false,
 };
 
@@ -46,6 +49,12 @@ const excludedCategoryDoc = (user: User, category: TradeCategory) =>
 
 const normalizeCategoryName = (category: unknown) =>
   typeof category === "string" ? category.trim().replace(/\s+/g, " ") : "";
+
+const normalizeStartDate = (date: unknown) => {
+  if (typeof date !== "string") return "";
+  const value = date.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+};
 
 const uniqueCategories = (categories: readonly unknown[]) => {
   const seen = new Set<string>();
@@ -69,12 +78,17 @@ const normalizeSettings = (data: Record<string, unknown> | undefined): Portfolio
     data?.categoryLabels && typeof data.categoryLabels === "object"
       ? data.categoryLabels as Record<string, unknown>
       : {};
+  const rawCategoryStartDates =
+    data?.categoryStartDates && typeof data.categoryStartDates === "object"
+      ? data.categoryStartDates as Record<string, unknown>
+      : {};
   const enabledCategories = uniqueCategories(rawEnabledCategories);
   const availableCategories = uniqueCategories([
     ...TRADE_CATEGORIES,
     ...rawAvailableCategories,
     ...enabledCategories,
     ...Object.keys(rawCategoryLabels),
+    ...Object.keys(rawCategoryStartDates),
   ]);
   const knownCategories = uniqueCategories([...TRADE_CATEGORIES, ...availableCategories, ...enabledCategories]);
   const categoryLabels = knownCategories.reduce((labels, category) => {
@@ -85,6 +99,10 @@ const normalizeSettings = (data: Record<string, unknown> | undefined): Portfolio
       [category]: label || category,
     };
   }, {} as CategoryLabels);
+  const categoryStartDates = knownCategories.reduce((dates, category) => {
+    const startDate = normalizeStartDate(rawCategoryStartDates[category]);
+    return startDate ? { ...dates, [category]: startDate } : dates;
+  }, {} as CategoryStartDates);
 
   return {
     excludedCategories: uniqueCategories(rawCategories),
@@ -92,6 +110,7 @@ const normalizeSettings = (data: Record<string, unknown> | undefined): Portfolio
     enabledCategories: enabledCategories.length > 0 ? enabledCategories : [...TRADE_CATEGORIES],
     availableCategories,
     categoryLabels,
+    categoryStartDates,
   };
 };
 
@@ -100,6 +119,9 @@ const sameCategories = (left: TradeCategory[], right: TradeCategory[]) => {
   const rightSet = new Set(right);
   return leftSet.size === rightSet.size && [...leftSet].every((category) => rightSet.has(category));
 };
+
+const sameStartDates = (left: CategoryStartDates, right: CategoryStartDates, categories: TradeCategory[]) =>
+  categories.every((category) => (left[category] ?? "") === (right[category] ?? ""));
 
 export const subscribeToPortfolioSettings = (
   user: User,
@@ -137,6 +159,10 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
     const label = settings.categoryLabels?.[category]?.trim() || category;
     return { ...labels, [category]: label };
   }, {} as CategoryLabels);
+  const categoryStartDates = knownCategories.reduce((dates, category) => {
+    const startDate = normalizeStartDate(settings.categoryStartDates?.[category]);
+    return startDate ? { ...dates, [category]: startDate } : dates;
+  }, {} as CategoryStartDates);
   const batch = writeBatch(db);
 
   batch.set(ref, {
@@ -145,6 +171,7 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
     enabledCategories,
     availableCategories,
     categoryLabels,
+    categoryStartDates,
     updatedAt: serverTimestamp(),
   });
 
@@ -168,7 +195,8 @@ export const savePortfolioSettings = async (user: User, settings: PortfolioSetti
     !sameCategories(savedSettings.hiddenClosedTradeCategories, hiddenClosedTradeCategories) ||
     !sameCategories(savedSettings.enabledCategories, enabledCategories) ||
     !sameCategories(savedSettings.availableCategories, availableCategories) ||
-    knownCategories.some((category) => savedSettings.categoryLabels[category] !== categoryLabels[category])
+    knownCategories.some((category) => savedSettings.categoryLabels[category] !== categoryLabels[category]) ||
+    !sameStartDates(savedSettings.categoryStartDates, categoryStartDates, knownCategories)
   ) {
     throw new Error("Firestore did not confirm the portfolio settings update. Please try again.");
   }
@@ -187,6 +215,7 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
   const enabledCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).enabledCategories : [...TRADE_CATEGORIES];
   const availableCategories = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).availableCategories : [...TRADE_CATEGORIES];
   const categoryLabels = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).categoryLabels : defaultCategoryLabels;
+  const categoryStartDates = settingsSnapshot.exists() ? normalizeSettings(settingsSnapshot.data()).categoryStartDates : {};
   const ledgerCategories = excludedSnapshot.docs
     .map((item) => item.data().category)
     .map(normalizeCategoryName)
@@ -194,7 +223,15 @@ export const loadPortfolioSettingsFromServer = async (user: User) => {
   const excludedCategories = [...new Set([...settingsCategories, ...ledgerCategories])];
 
   return settingsSnapshot.exists() || excludedSnapshot.docs.length > 0
-    ? { excludedCategories, hiddenClosedTradeCategories, enabledCategories, availableCategories, categoryLabels, exists: true }
+    ? {
+        excludedCategories,
+        hiddenClosedTradeCategories,
+        enabledCategories,
+        availableCategories,
+        categoryLabels,
+        categoryStartDates,
+        exists: true,
+      }
     : defaultSettings;
 };
 

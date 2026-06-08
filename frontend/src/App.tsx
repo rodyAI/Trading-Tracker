@@ -27,6 +27,7 @@ import {
   loadPortfolioSettingsFromServer,
   savePortfolioSettings,
   type CategoryLabels,
+  type CategoryStartDates,
 } from "./services/firebasePortfolioSettings";
 import { loadTradeCandles, refreshTradeQuotes } from "./services/marketDataService";
 import {
@@ -115,6 +116,18 @@ const uniqueCategories = (categories: string[]) => {
       seen.add(category);
       return true;
     });
+};
+
+const calculateElapsedMonths = (startDate: string, currentDate = new Date()) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate);
+  if (!match) return null;
+  const startYear = Number(match[1]);
+  const startMonth = Number(match[2]);
+  const startDay = Number(match[3]);
+  if (!startYear || startMonth < 1 || startMonth > 12 || startDay < 1 || startDay > 31) return null;
+  let months = (currentDate.getFullYear() - startYear) * 12 + (currentDate.getMonth() + 1 - startMonth);
+  if (currentDate.getDate() < startDay) months -= 1;
+  return Math.max(0, months);
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -393,6 +406,7 @@ export default function App() {
   const [sectionSelectionDraft, setSectionSelectionDraft] = useState<TradeCategory[]>(() => [...TRADE_CATEGORIES]);
   const [categoryLabels, setCategoryLabels] = useState<CategoryLabels>(() => defaultCategoryLabels);
   const [categoryLabelDraft, setCategoryLabelDraft] = useState<CategoryLabels>(() => defaultCategoryLabels);
+  const [categoryStartDates, setCategoryStartDates] = useState<CategoryStartDates>({});
   const [customSectionName, setCustomSectionName] = useState("");
   const [customSectionError, setCustomSectionError] = useState("");
   const [isSectionChooserOpen, setIsSectionChooserOpen] = useState(false);
@@ -441,6 +455,7 @@ export default function App() {
     setSectionSelectionDraft(serverSettings.enabledCategories);
     setCategoryLabels(serverSettings.categoryLabels);
     setCategoryLabelDraft(serverSettings.categoryLabels);
+    setCategoryStartDates(serverSettings.categoryStartDates);
     if (!serverSettings.exists) {
       setIsSectionChooserOpen(true);
     }
@@ -472,6 +487,7 @@ export default function App() {
       setSectionSelectionDraft([...TRADE_CATEGORIES]);
       setCategoryLabels(defaultCategoryLabels);
       setCategoryLabelDraft(defaultCategoryLabels);
+      setCategoryStartDates({});
       setCustomSectionName("");
       setCustomSectionError("");
       setIsSectionChooserOpen(false);
@@ -980,6 +996,7 @@ export default function App() {
         enabledCategories: enabledTradeCategories,
         availableCategories: availableTradeCategories,
         categoryLabels,
+        categoryStartDates,
       });
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
       setHiddenClosedTradeCategories(savedSettings.hiddenClosedTradeCategories);
@@ -988,6 +1005,7 @@ export default function App() {
       setSectionSelectionDraft(savedSettings.enabledCategories);
       setCategoryLabels(savedSettings.categoryLabels);
       setCategoryLabelDraft(savedSettings.categoryLabels);
+      setCategoryStartDates(savedSettings.categoryStartDates);
       cacheExcludedCategories(user, savedSettings.excludedCategories);
       setStatusMessage(`${getCategoryLabel(category)} ${nextCategories.includes(category) ? "excluded from" : "included in"} portfolio total P/L.`);
     } catch (error) {
@@ -1015,6 +1033,7 @@ export default function App() {
         enabledCategories: enabledTradeCategories,
         availableCategories: availableTradeCategories,
         categoryLabels,
+        categoryStartDates,
       });
       setExcludedPortfolioCategories(savedSettings.excludedCategories);
       setHiddenClosedTradeCategories(savedSettings.hiddenClosedTradeCategories);
@@ -1023,6 +1042,7 @@ export default function App() {
       setSectionSelectionDraft(savedSettings.enabledCategories);
       setCategoryLabels(savedSettings.categoryLabels);
       setCategoryLabelDraft(savedSettings.categoryLabels);
+      setCategoryStartDates(savedSettings.categoryStartDates);
       setStatusMessage(
         `${getCategoryLabel(category)} closed trades ${
           savedSettings.hiddenClosedTradeCategories.includes(category) ? "hidden" : "shown"
@@ -1031,6 +1051,48 @@ export default function App() {
     } catch (error) {
       setHiddenClosedTradeCategories(hiddenClosedTradeCategories);
       setGlobalError(error instanceof Error ? error.message : `Failed to update ${category} closed trade visibility.`);
+    }
+  };
+
+  const handleCategoryStartDateChange = async (category: TradeCategory, startDate: string) => {
+    if (!user) {
+      setStatusMessage("Sign in before setting a strategy date.");
+      return;
+    }
+
+    const nextStartDates = { ...categoryStartDates };
+    if (startDate) {
+      nextStartDates[category] = startDate;
+    } else {
+      delete nextStartDates[category];
+    }
+
+    setCategoryStartDates(nextStartDates);
+    try {
+      const savedSettings = await savePortfolioSettings(user, {
+        excludedCategories: excludedPortfolioCategories,
+        hiddenClosedTradeCategories,
+        enabledCategories: enabledTradeCategories,
+        availableCategories: availableTradeCategories,
+        categoryLabels,
+        categoryStartDates: nextStartDates,
+      });
+      setExcludedPortfolioCategories(savedSettings.excludedCategories);
+      setHiddenClosedTradeCategories(savedSettings.hiddenClosedTradeCategories);
+      setEnabledTradeCategories(savedSettings.enabledCategories);
+      setAvailableTradeCategories(savedSettings.availableCategories);
+      setSectionSelectionDraft(savedSettings.enabledCategories);
+      setCategoryLabels(savedSettings.categoryLabels);
+      setCategoryLabelDraft(savedSettings.categoryLabels);
+      setCategoryStartDates(savedSettings.categoryStartDates);
+      setStatusMessage(
+        startDate
+          ? `${getCategoryLabel(category)} date set.`
+          : `${getCategoryLabel(category)} date cleared.`,
+      );
+    } catch (error) {
+      setCategoryStartDates(categoryStartDates);
+      setGlobalError(error instanceof Error ? error.message : `Failed to update ${category} date.`);
     }
   };
 
@@ -1092,6 +1154,11 @@ export default function App() {
       ...Object.keys(nextCategoryLabels),
       ...nextEnabledCategories,
     ]);
+    const nextAvailableCategorySet = new Set(nextAvailableCategories);
+    const nextCategoryStartDates = Object.entries(categoryStartDates).reduce((dates, [category, startDate]) => {
+      if (!nextAvailableCategorySet.has(category) || !startDate) return dates;
+      return { ...dates, [category]: startDate };
+    }, {} as CategoryStartDates);
 
     setIsSavingSections(true);
     setGlobalError("");
@@ -1102,6 +1169,7 @@ export default function App() {
         enabledCategories: nextEnabledCategories,
         availableCategories: nextAvailableCategories,
         categoryLabels: nextCategoryLabels,
+        categoryStartDates: nextCategoryStartDates,
       });
       setEnabledTradeCategories(savedSettings.enabledCategories);
       setAvailableTradeCategories(savedSettings.availableCategories);
@@ -1110,6 +1178,7 @@ export default function App() {
       setHiddenClosedTradeCategories(savedSettings.hiddenClosedTradeCategories);
       setCategoryLabels(savedSettings.categoryLabels);
       setCategoryLabelDraft(savedSettings.categoryLabels);
+      setCategoryStartDates(savedSettings.categoryStartDates);
       cacheExcludedCategories(user, savedSettings.excludedCategories);
       setActiveCategory((current) =>
         savedSettings.enabledCategories.includes(current) ? current : savedSettings.enabledCategories[0],
@@ -1573,6 +1642,8 @@ export default function App() {
   );
   const activeTrades = tradesByCategory[activeCategory] ?? [];
   const activeClosedTradesHidden = hiddenClosedTradeCategorySet.has(activeCategory);
+  const activeCategoryStartDate = categoryStartDates[activeCategory] ?? "";
+  const activeCategoryElapsedMonths = calculateElapsedMonths(activeCategoryStartDate);
   const visibleActiveTrades = visibleTradesByCategory[activeCategory] ?? [];
   const categorySummaries = useMemo(
     () =>
@@ -2877,31 +2948,37 @@ export default function App() {
         </div>
 
         <div className="sheet-tabs" role="tablist" aria-label="Dashboard sheets">
-          {visibleTradeCategories.map((category) => (
-            <button
-              key={category}
-              type="button"
-              role="tab"
-              aria-selected={activeCategory === category}
-              className={`${activeCategory === category ? "active" : ""} ${
-                excludedPortfolioCategorySet.has(category) ? "excluded" : ""
-              }`}
-              onClick={() => setActiveCategory(category)}
-              aria-label={`${getCategoryLabel(category)}: ${formatCurrency(categorySummaries[category].totalProfitLoss)}, ${formatPercent(
-                categorySummaries[category].totalProfitLossPercent,
-              )}${excludedPortfolioCategorySet.has(category) ? ", excluded from total portfolio P/L" : ""}`}
-            >
-              <span className="tab-title">{getCategoryLabel(category)}</span>
-              <strong className="tab-count">{numberFormatter.format(visibleTradesByCategory[category]?.length ?? 0)}</strong>
-              <small className="tab-pl">
-                {formatCurrency(categorySummaries[category].totalProfitLoss)} /{" "}
-                {formatPercent(categorySummaries[category].totalProfitLossPercent)}
-              </small>
-              <small className="tab-inclusion">
-                {excludedPortfolioCategorySet.has(category) ? "Excluded from total" : "Included in total"}
-              </small>
-            </button>
-          ))}
+          {visibleTradeCategories.map((category) => {
+            const elapsedMonths = calculateElapsedMonths(categoryStartDates[category] ?? "");
+            return (
+              <button
+                key={category}
+                type="button"
+                role="tab"
+                aria-selected={activeCategory === category}
+                className={`${activeCategory === category ? "active" : ""} ${
+                  excludedPortfolioCategorySet.has(category) ? "excluded" : ""
+                }`}
+                onClick={() => setActiveCategory(category)}
+                aria-label={`${getCategoryLabel(category)}: ${formatCurrency(categorySummaries[category].totalProfitLoss)}, ${formatPercent(
+                  categorySummaries[category].totalProfitLossPercent,
+                )}${elapsedMonths == null ? "" : `, ${elapsedMonths} months since start`}${
+                  excludedPortfolioCategorySet.has(category) ? ", excluded from total portfolio P/L" : ""
+                }`}
+              >
+                <span className="tab-title">{getCategoryLabel(category)}</span>
+                <strong className="tab-count">{numberFormatter.format(visibleTradesByCategory[category]?.length ?? 0)}</strong>
+                <small className="tab-pl">
+                  {formatCurrency(categorySummaries[category].totalProfitLoss)} /{" "}
+                  {formatPercent(categorySummaries[category].totalProfitLossPercent)}
+                </small>
+                {elapsedMonths != null && <small className="tab-months">{elapsedMonths} mo</small>}
+                <small className="tab-inclusion">
+                  {excludedPortfolioCategorySet.has(category) ? "Excluded from total" : "Included in total"}
+                </small>
+              </button>
+            );
+          })}
         </div>
 
         <section className="dashboard-sheet">
@@ -2929,6 +3006,15 @@ export default function App() {
               <small className="section-inclusion-status">
                 {excludedPortfolioCategorySet.has(activeCategory) ? "Excluded from total P/L" : "Included in total P/L"}
               </small>
+              <label className="strategy-date-control">
+                <span>Start date</span>
+                <input
+                  type="date"
+                  value={activeCategoryStartDate}
+                  onChange={(event) => void handleCategoryStartDateChange(activeCategory, event.target.value)}
+                />
+                {activeCategoryElapsedMonths != null && <strong>{activeCategoryElapsedMonths} mo</strong>}
+              </label>
               <button
                 type="button"
                 className={`secondary-button section-total-toggle ${
