@@ -1660,6 +1660,19 @@ export default function App() {
       ),
     [allTradeCategories, tradesByCategory],
   );
+  const categoryOpenSummaries = useMemo(
+    () =>
+      allTradeCategories.reduce(
+        (summaries, category) => ({
+          ...summaries,
+          [category]: summarizeTrades(
+            (tradesByCategory[category] ?? []).filter((trade) => calculateTradePosition(trade).openQuantity > 0),
+          ),
+        }),
+        {} as Record<TradeCategory, ReturnType<typeof summarizeTrades>>,
+      ),
+    [allTradeCategories, tradesByCategory],
+  );
   const activeSummary = categorySummaries[activeCategory] ?? summarizeTrades([]);
   const categoryDisplayLabels = useMemo(() => normalizeCategoryLabels(categoryLabels), [categoryLabels]);
   const getCategoryLabel = useCallback(
@@ -2954,6 +2967,7 @@ export default function App() {
         <div className="sheet-tabs" role="tablist" aria-label="Dashboard sheets">
           {visibleTradeCategories.map((category) => {
             const elapsedMonths = calculateElapsedMonths(categoryStartDates[category] ?? "");
+            const openSummary = categoryOpenSummaries[category] ?? summarizeTrades([]);
             return (
               <button
                 key={category}
@@ -2964,8 +2978,8 @@ export default function App() {
                   excludedPortfolioCategorySet.has(category) ? "excluded" : ""
                 }`}
                 onClick={() => setActiveCategory(category)}
-                aria-label={`${getCategoryLabel(category)}: ${formatCurrency(categorySummaries[category].totalProfitLoss)}, ${formatPercent(
-                  categorySummaries[category].totalProfitLossPercent,
+                aria-label={`${getCategoryLabel(category)}: ${formatCurrency(openSummary.unrealized)}, ${formatPercent(
+                  openSummary.unrealizedPercent,
                 )}${elapsedMonths == null ? "" : `, ${elapsedMonths} months since start`}${
                   excludedPortfolioCategorySet.has(category) ? ", excluded from total portfolio P/L" : ""
                 }`}
@@ -2973,8 +2987,8 @@ export default function App() {
                 <span className="tab-title">{getCategoryLabel(category)}</span>
                 <strong className="tab-count">{numberFormatter.format(visibleTradesByCategory[category]?.length ?? 0)}</strong>
                 <small className="tab-pl">
-                  {formatCurrency(categorySummaries[category].totalProfitLoss)} /{" "}
-                  {formatPercent(categorySummaries[category].totalProfitLossPercent)}
+                  {formatCurrency(openSummary.unrealized)} /{" "}
+                  {formatPercent(openSummary.unrealizedPercent)}
                 </small>
                 {elapsedMonths != null && <small className="tab-months">{elapsedMonths} mo</small>}
                 <small className="tab-inclusion">
